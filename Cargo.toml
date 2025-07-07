@@ -1,5 +1,5 @@
 [package]
-name = "dtchat-engine"
+name = "socket-engine"
 version = "0.1.0"
 edition = "2021"
 
