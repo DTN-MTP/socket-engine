@@ -20,14 +20,16 @@ impl Engine {
     pub fn start_listener(&self, endpoint: Endpoint) {
         match GenericSocket::new(endpoint) {
             Ok(mut sock) => {
-                if let Err(e) = sock.start_listener(self.observer.clone()) {
-                    eprintln!("Failed to start listener for endpoint {}", e);
+                if let Err(_e) = sock.start_listener(self.observer.clone()) {
+                    // eprintln!("Failed to start listener for endpoint {}", e);
+                    todo!();
                     // Continue with next endpoint instead of failing completely
                 }
             }
-            Err(e) => {
-                eprintln!("Failed to create socket for endpoint {:?}:", e);
+            Err(_e) => {
+                // eprintln!("Failed to create socket for endpoint {:?}:", e);
                 // Continue with next endpoint instead of failing
+                todo!();
             }
         }
     }
@@ -37,7 +39,6 @@ impl Engine {
         endpoint: Endpoint,
         data: Vec<u8>,
     ) -> Result<(), Box<dyn std::error::Error + Send + Sync>> {
-        println!("{}", data.len());
         TOKIO_RUNTIME.spawn(async move {
             let mut generic_socket = GenericSocket::new(endpoint).unwrap();
 

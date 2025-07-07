@@ -38,7 +38,7 @@ impl Endpoint {
 }
 
 const BP_SCHEME_IPN: u32 = 1;
-const BP_SCHEME_DTN: u32 = 2;
+// const BP_SCHEME_DTN: u32 = 2;
 
 #[repr(C)]
 struct SockAddrBp {

@@ -75,8 +75,7 @@ impl GenericSocket {
         self.socket.bind(&SockAddr::from(self.sockaddr.clone()))?;
 
         match &self.endpoint {
-            Endpoint::Udp(addr) | Endpoint::Bp(addr) => {
-                let address = addr.clone();
+            Endpoint::Udp(_addr) | Endpoint::Bp(_addr) => {
                 TOKIO_RUNTIME.spawn_blocking({
                     let mut socket = self.socket.try_clone()?;
                     let observer = observer.clone();
@@ -85,11 +84,6 @@ impl GenericSocket {
 
                         match socket.read(&mut buffer) {
                             Ok(size) => {
-                                println!(
-                                    "UDP/BP received {} bytes on listening address {}",
-                                    size, address
-                                );
-
                                 // Convert to Vec<u8> for consistency
                                 let data = buffer[..size].to_vec();
                                 let observer_clone = observer.clone();
@@ -104,24 +98,21 @@ impl GenericSocket {
                             Err(ref e) if e.kind() == io::ErrorKind::WouldBlock => {
                                 thread::sleep(std::time::Duration::from_millis(10));
                             }
-                            Err(e) => {
-                                eprintln!("UDP/BP Error: {}", e);
-                                break;
+                            Err(_e) => {
+                                todo!();
                             }
                         }
                     }
                 });
             }
 
-            Endpoint::Tcp(addr) => {
+            Endpoint::Tcp(_addr) => {
                 self.socket.listen(128)?;
-                let address = addr.clone();
                 TOKIO_RUNTIME.spawn_blocking({
                     let socket = self.socket.try_clone()?;
                     move || loop {
                         match socket.accept() {
                             Ok((stream, _peer)) => {
-                                println!("TCP connection {} listening address", address);
                                 let observer_for_stream = observer.clone();
                                 TOKIO_RUNTIME.spawn(async move {
                                     handle_tcp_connection(stream.into(), observer_for_stream).await;
@@ -130,9 +121,8 @@ impl GenericSocket {
                             Err(ref e) if e.kind() == io::ErrorKind::WouldBlock => {
                                 thread::sleep(std::time::Duration::from_millis(10));
                             }
-                            Err(e) => {
-                                eprintln!("TCP Error: {}", e);
-                                break;
+                            Err(_e) => {
+                                todo!();
                             }
                         }
                     }
@@ -153,15 +143,13 @@ async fn handle_tcp_connection(
     loop {
         match stream.read(&mut buffer) {
             Ok(0) => {
-                println!("TCP connection closed.");
                 break;
             }
             Ok(size) => {
                 full_data.extend_from_slice(&buffer[..size]);
             }
-            Err(e) => {
-                eprintln!("TCP Read Error: {}", e);
-                return;
+            Err(_e) => {
+                todo!();
             }
         }
     }
