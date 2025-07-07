@@ -66,18 +66,6 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "9555578bc9e57714c812a1f84e4fc5b4d21fcb063490c624de019f7464c91268"
 
 [[package]]
-name = "dtchat-engine"
-version = "0.1.0"
-dependencies = [
- "libc",
- "once_cell",
- "prost",
- "prost-build",
- "socket2",
- "tokio",
-]
-
-[[package]]
 name = "either"
 version = "1.15.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -373,6 +361,18 @@ dependencies = [
  "libc",
  "linux-raw-sys",
  "windows-sys 0.59.0",
+]
+
+[[package]]
+name = "socket-engine"
+version = "0.1.0"
+dependencies = [
+ "libc",
+ "once_cell",
+ "prost",
+ "prost-build",
+ "socket2",
+ "tokio",
 ]
 
 [[package]]

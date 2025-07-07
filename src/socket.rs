@@ -6,12 +6,12 @@ use std::{
 
 use libc::c_int;
 
-use crate::{encoding::{decode_proto_message_from_bytes}, proto::ProtoMessage};
 use socket2::{Domain, Protocol, SockAddr, Socket, Type};
 
 use crate::{
     endpoint::{create_bp_sockaddr_with_string, Endpoint},
-    engine::{EngineObserver, TOKIO_RUNTIME},
+    engine::TOKIO_RUNTIME,
+    event::{EngineObserver, SocketEngineEvent},
 };
 pub const AF_BP: c_int = 28;
 
@@ -78,19 +78,27 @@ impl GenericSocket {
             Endpoint::Udp(addr) | Endpoint::Bp(addr) => {
                 let address = addr.clone();
                 TOKIO_RUNTIME.spawn_blocking({
-                    let mut socket = self.socket.try_clone()?; // Clone the socket for the async thread
+                    let mut socket = self.socket.try_clone()?;
+                    let observer = observer.clone();
                     move || loop {
-                        let mut buffer: [u8; 1024] = [0; 1024];
+                        let mut buffer: [u8; 65507] = [0; 65507];
+
                         match socket.read(&mut buffer) {
                             Ok(size) => {
                                 println!(
                                     "UDP/BP received {} bytes on listening address {}",
                                     size, address
                                 );
+
+                                // Convert to Vec<u8> for consistency
+                                let data = buffer[..size].to_vec();
                                 let observer_clone = observer.clone();
+
                                 TOKIO_RUNTIME.spawn(async move {
-                                    let decoded = decode_proto_message_from_bytes(&buffer[0..size]).unwrap();
-                                    observer_clone.lock().unwrap().get_notification(decoded);
+                                    observer_clone
+                                        .lock()
+                                        .unwrap()
+                                        .notify(SocketEngineEvent::Reception(data));
                                 });
                             }
                             Err(ref e) if e.kind() == io::ErrorKind::WouldBlock => {
@@ -104,6 +112,7 @@ impl GenericSocket {
                     }
                 });
             }
+
             Endpoint::Tcp(addr) => {
                 self.socket.listen(128)?;
                 let address = addr.clone();
@@ -138,15 +147,29 @@ async fn handle_tcp_connection(
     mut stream: std::net::TcpStream,
     observer: Arc<Mutex<dyn EngineObserver + Send + Sync>>,
 ) {
+    let mut full_data = Vec::new();
     let mut buffer = [0; 1024];
-    match stream.read(&mut buffer) {
-        Ok(size) => {
-            println!("TCP received {} bytes", size);
-            let decoded = decode_proto_message_from_bytes(&buffer[0..size]).unwrap();
-            observer.lock().unwrap().get_notification(decoded);
+
+    loop {
+        match stream.read(&mut buffer) {
+            Ok(0) => {
+                println!("TCP connection closed.");
+                break;
+            }
+            Ok(size) => {
+                full_data.extend_from_slice(&buffer[..size]);
+            }
+            Err(e) => {
+                eprintln!("TCP Read Error: {}", e);
+                return;
+            }
         }
-        Err(e) => {
-            eprintln!("TCP Read Error: {}", e);
-        }
+    }
+
+    if !full_data.is_empty() {
+        observer
+            .lock()
+            .unwrap()
+            .notify(SocketEngineEvent::Reception(full_data));
     }
 }

@@ -2,16 +2,19 @@ use std::env;
 use std::io::{self, BufRead};
 use std::sync::{Arc, Mutex};
 
-use dtchat_engine::encoding::{create_ack_proto_message, create_text_proto_message}; // adjust path as needed
-use dtchat_engine::endpoint::Endpoint;
-use dtchat_engine::engine::{Engine, EngineObserver};
-use dtchat_engine::proto::ProtoMessage;
+use socket_engine::endpoint::Endpoint;
+use socket_engine::engine::Engine;
+use socket_engine::event::EngineObserver;
 
 struct Obs;
 
 impl EngineObserver for Obs {
-    fn get_notification(&mut self, message: ProtoMessage) {
-        println!("▶ received: {:?}", message);
+    fn notify(&mut self, event: socket_engine::event::SocketEngineEvent) {
+        match event {
+            socket_engine::event::SocketEngineEvent::Reception(items) => {
+                println!("▶ received: {:?}", items)
+            }
+        }
     }
 }
 
@@ -47,7 +50,6 @@ fn main() -> io::Result<()> {
     let stdin = io::stdin();
     let mut reader = stdin.lock();
     let mut line = String::new();
-    let mut alt = true;
     loop {
         println!("msg to send:");
         line.clear();
@@ -56,15 +58,12 @@ fn main() -> io::Result<()> {
             // EOF
             break;
         }
-
         // strip trailing newline
         let text = line.trim_end().to_string();
 
         // --- 4) wrap in ProtoMessage + send
-        let msg= if alt {create_text_proto_message(text)} else {create_ack_proto_message(text, true , true)};
-        alt = !alt;
-        println!("will send {:?}",msg);
-        if let Err(err) = engine.send(distant_ep.clone(), msg) {
+        println!("will send {:?}", line);
+        if let Err(err) = engine.send_async(distant_ep.clone(), text.into_bytes()) {
             eprintln!("failed to send message: {}", err);
         }
     }
