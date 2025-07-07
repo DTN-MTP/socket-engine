@@ -12,10 +12,10 @@ impl EngineObserver for Obs {
     fn notify(&mut self, event: socket_engine::event::SocketEngineEvent) {
         match event {
             socket_engine::event::SocketEngineEvent::Reception(items) => {
-                        println!("< received: {:?}", items)
-                    }
-            socket_engine::event::SocketEngineEvent::Sent(uuid) => {
-                 println!("> sent with uuid: {:?}", uuid)
+                println!("< received: {:?}", items)
+            }
+            socket_engine::event::SocketEngineEvent::SentError((err_msg, uuid)) => {
+                println!("> sent failed for uuid: {:?}, {:?}", uuid, err_msg)
             }
         }
     }
@@ -66,7 +66,9 @@ fn main() -> io::Result<()> {
 
         // --- 4) wrap in ProtoMessage + send
         println!("will send {:?}", line);
-        if let Err(err) = engine.send_async(distant_ep.clone(), text.into_bytes(), "some_id".to_string()) {
+        if let Err(err) =
+            engine.send_async(distant_ep.clone(), text.into_bytes(), "some_id".to_string())
+        {
             eprintln!("failed to send message: {}", err);
         }
     }
