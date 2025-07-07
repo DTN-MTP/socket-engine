@@ -369,7 +369,6 @@ version = "0.1.0"
 dependencies = [
  "libc",
  "once_cell",
- "prost",
  "prost-build",
  "socket2",
  "tokio",
