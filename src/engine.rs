@@ -1,4 +1,4 @@
-use crate::{endpoint::Endpoint, event::EngineObserver, socket::GenericSocket};
+use crate::{endpoint::Endpoint, event::{self, EngineObserver, SocketEngineEvent}, socket::GenericSocket};
 use once_cell::sync::Lazy;
 use std::{
     io::Write,
@@ -38,6 +38,7 @@ impl Engine {
         &self,
         endpoint: Endpoint,
         data: Vec<u8>,
+        data_uuid: String,
     ) -> Result<(), Box<dyn std::error::Error + Send + Sync>> {
         TOKIO_RUNTIME.spawn(async move {
             let mut generic_socket = GenericSocket::new(endpoint).unwrap();
@@ -63,6 +64,7 @@ impl Engine {
                 }
             }
         });
+        self.observer.lock().unwrap().notify(SocketEngineEvent::Sent(data_uuid));
         Ok(())
     }
 }
