@@ -89,6 +89,10 @@ impl Engine {
                     }
                 }
             }
+            observer
+                .lock()
+                .unwrap()
+                .notify(SocketEngineEvent::Sent(data_uuid.clone()));
         });
         Ok(())
     }

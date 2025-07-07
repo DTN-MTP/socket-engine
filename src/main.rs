@@ -17,6 +17,9 @@ impl EngineObserver for Obs {
             socket_engine::event::SocketEngineEvent::SentError((err_msg, uuid)) => {
                 println!("> sent failed for uuid: {:?}, {:?}", uuid, err_msg)
             }
+            socket_engine::event::SocketEngineEvent::Sent(uuid) => {
+                println!("> sent: {:?}", uuid)
+            }
         }
     }
 }
