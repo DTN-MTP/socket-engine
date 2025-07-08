@@ -1,6 +1,6 @@
 use crate::{
     endpoint::Endpoint,
-    event::{EngineObserver, SocketEngineEvent},
+    event::{notify_all, EngineObserver, SocketEngineEvent},
     socket::GenericSocket,
 };
 use once_cell::sync::Lazy;
@@ -13,18 +13,23 @@ pub static TOKIO_RUNTIME: Lazy<Runtime> =
     Lazy::new(|| Runtime::new().expect("Failed to create Tokio runtime"));
 
 pub struct Engine {
-    observer: Arc<Mutex<dyn EngineObserver + Send + Sync>>,
+    observers: Vec<Arc<Mutex<dyn EngineObserver + Send + Sync>>>,
 }
 
 impl Engine {
-    pub fn new(observer: Arc<Mutex<dyn EngineObserver + Send + Sync>>) -> Self {
-        Self { observer }
+    pub fn new() -> Self {
+        Self {
+            observers: Vec::new(),
+        }
+    }
+    pub fn add_observer(&mut self, obs: Arc<Mutex<dyn EngineObserver + Send + Sync>>) {
+        self.observers.push(obs);
     }
 
-    pub fn start_listener(&self, endpoint: Endpoint) {
+    pub fn start_listener_async(&self, endpoint: Endpoint) {
         match GenericSocket::new(endpoint) {
             Ok(mut sock) => {
-                if let Err(_e) = sock.start_listener(self.observer.clone()) {
+                if let Err(_e) = sock.start_listener(self.observers.clone()) {
                     // eprintln!("Failed to start listener for endpoint {}", e);
                     todo!();
                     // Continue with next endpoint instead of failing completely
@@ -44,7 +49,7 @@ impl Engine {
         data: Vec<u8>,
         data_uuid: String,
     ) -> Result<(), Box<dyn std::error::Error + Send + Sync>> {
-        let observer = self.observer.clone();
+        let observers = self.observers.clone();
         TOKIO_RUNTIME.spawn(async move {
             let mut generic_socket = GenericSocket::new(endpoint).unwrap();
 
@@ -54,13 +59,10 @@ impl Engine {
                         .socket
                         .send_to(&data.as_slice(), &generic_socket.sockaddr.clone())
                     {
-                        observer
-                            .lock()
-                            .unwrap()
-                            .notify(SocketEngineEvent::SentError((
-                                err.to_string(),
-                                data_uuid.clone(),
-                            )));
+                        notify_all(
+                            &observers,
+                            &SocketEngineEvent::SentError((err.to_string(), data_uuid.clone())),
+                        );
                     }
                 }
                 Endpoint::Tcp(_) => {
@@ -68,31 +70,22 @@ impl Engine {
                         .socket
                         .connect(&generic_socket.sockaddr.clone())
                     {
-                        observer
-                            .lock()
-                            .unwrap()
-                            .notify(SocketEngineEvent::SentError((
-                                err.to_string(),
-                                data_uuid.clone(),
-                            )));
+                        notify_all(
+                            &observers,
+                            &SocketEngineEvent::SentError((err.to_string(), data_uuid.clone())),
+                        );
                     }
                     generic_socket.socket.write_all(&data.as_slice()).unwrap();
                     generic_socket.socket.flush().unwrap();
                     if let Err(err) = generic_socket.socket.shutdown(std::net::Shutdown::Both) {
-                        observer
-                            .lock()
-                            .unwrap()
-                            .notify(SocketEngineEvent::SentError((
-                                err.to_string(),
-                                data_uuid.clone(),
-                            )));
+                        notify_all(
+                            &observers,
+                            &SocketEngineEvent::SentError((err.to_string(), data_uuid.clone())),
+                        );
                     }
                 }
             }
-            observer
-                .lock()
-                .unwrap()
-                .notify(SocketEngineEvent::Sent(data_uuid.clone()));
+            notify_all(&observers, &SocketEngineEvent::Sent(data_uuid.clone()));
         });
         Ok(())
     }

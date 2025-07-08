@@ -49,8 +49,9 @@ fn main() -> io::Result<()> {
 
     // --- 2) create engine + observer
     let observer = Arc::new(Mutex::new(Obs));
-    let engine = Engine::new(observer);
-    engine.start_listener(local_ep);
+    let mut engine = Engine::new();
+    engine.add_observer(observer);
+    engine.start_listener_async(local_ep);
 
     // --- 3) read lines from stdin
     let stdin = io::stdin();

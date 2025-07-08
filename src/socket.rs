@@ -10,8 +10,8 @@ use socket2::{Domain, Protocol, SockAddr, Socket, Type};
 
 use crate::{
     endpoint::{create_bp_sockaddr_with_string, Endpoint},
-    engine::TOKIO_RUNTIME,
-    event::{EngineObserver, SocketEngineEvent},
+    engine::{Engine, TOKIO_RUNTIME},
+    event::{notify_all, EngineObserver, SocketEngineEvent},
 };
 pub const AF_BP: c_int = 28;
 
@@ -62,7 +62,7 @@ impl GenericSocket {
 
     pub fn start_listener(
         &mut self,
-        observer: Arc<Mutex<dyn EngineObserver + Send + Sync>>,
+        observers: Vec<Arc<Mutex<dyn EngineObserver + Send + Sync>>>,
     ) -> io::Result<()> {
         if self.listening {
             return Ok(());
@@ -78,7 +78,7 @@ impl GenericSocket {
             Endpoint::Udp(_addr) | Endpoint::Bp(_addr) => {
                 TOKIO_RUNTIME.spawn_blocking({
                     let mut socket = self.socket.try_clone()?;
-                    let observer = observer.clone();
+                    let observers_cloned = observers.clone();
                     move || loop {
                         let mut buffer: [u8; 65507] = [0; 65507];
 
@@ -86,14 +86,7 @@ impl GenericSocket {
                             Ok(size) => {
                                 // Convert to Vec<u8> for consistency
                                 let data = buffer[..size].to_vec();
-                                let observer_clone = observer.clone();
-
-                                TOKIO_RUNTIME.spawn(async move {
-                                    observer_clone
-                                        .lock()
-                                        .unwrap()
-                                        .notify(SocketEngineEvent::Reception(data));
-                                });
+                                notify_all(&observers_cloned, &SocketEngineEvent::Reception(data))
                             }
                             Err(ref e) if e.kind() == io::ErrorKind::WouldBlock => {
                                 thread::sleep(std::time::Duration::from_millis(10));
@@ -113,9 +106,9 @@ impl GenericSocket {
                     move || loop {
                         match socket.accept() {
                             Ok((stream, _peer)) => {
-                                let observer_for_stream = observer.clone();
+                                let observers_cloned = observers.clone();
                                 TOKIO_RUNTIME.spawn(async move {
-                                    handle_tcp_connection(stream.into(), observer_for_stream).await;
+                                    handle_tcp_connection(stream.into(), &observers_cloned).await;
                                 });
                             }
                             Err(ref e) if e.kind() == io::ErrorKind::WouldBlock => {
@@ -135,7 +128,7 @@ impl GenericSocket {
 
 async fn handle_tcp_connection(
     mut stream: std::net::TcpStream,
-    observer: Arc<Mutex<dyn EngineObserver + Send + Sync>>,
+    observers: &Vec<Arc<Mutex<dyn EngineObserver + Send + Sync>>>,
 ) {
     let mut full_data = Vec::new();
     let mut buffer = [0; 1024];
@@ -155,9 +148,6 @@ async fn handle_tcp_connection(
     }
 
     if !full_data.is_empty() {
-        observer
-            .lock()
-            .unwrap()
-            .notify(SocketEngineEvent::Reception(full_data));
+        notify_all(observers, &SocketEngineEvent::Reception(full_data));
     }
 }
