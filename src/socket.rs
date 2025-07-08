@@ -10,7 +10,7 @@ use socket2::{Domain, Protocol, SockAddr, Socket, Type};
 
 use crate::{
     endpoint::{create_bp_sockaddr_with_string, Endpoint},
-    engine::{Engine, TOKIO_RUNTIME},
+    engine::TOKIO_RUNTIME,
     event::{notify_all, EngineObserver, SocketEngineEvent},
 };
 pub const AF_BP: c_int = 28;
