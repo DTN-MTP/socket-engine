@@ -2,56 +2,78 @@ use std::sync::{Arc, Mutex};
 
 use crate::endpoint::Endpoint;
 
-#[derive(Clone)]
+#[derive(Clone, Debug)]
 pub enum SocketEngineEvent {
-    Info(EventSocket),
-    Error(ErrorEventSocket),
+    Data(DataEvent),
+    Connection(ConnectionEvent),
+    Error(ErrorEvent),
 }
 
 #[derive(Clone, Debug)]
-pub enum EventSocket {
-    Tcp(TcpEvent),
-    Udp(UdpEvent),
-    General(GeneralSocketEvent),
+pub enum DataEvent {
+    Received {
+        data: Vec<u8>,
+        from: Endpoint,
+    },
+    Sent {
+        message_id: String,
+        to: Endpoint,
+        bytes_sent: usize,
+    },
 }
 
 #[derive(Clone, Debug)]
-pub enum GeneralSocketEvent {
-    DataReceived(Vec<u8>, Endpoint),
-    DataSent(String, Endpoint),
-    
+pub enum ConnectionEvent {
+    ListenerStarted {
+        endpoint: Endpoint,
+    },
+    Established {
+        remote: Endpoint,
+    },
+    Closed {
+        remote: Option<Endpoint>,
+    },
 }
 
 #[derive(Clone, Debug)]
-pub enum ErrorEventSocket {
-    Tcp(TcpErrorEvent),
-    General(GeneralSocketErrorEvent),
-}
-#[derive(Clone, Debug)]
-pub enum GeneralSocketErrorEvent {
-    ConnectionError(String, Endpoint),
-    SendFailed(String, String, Endpoint),
-    ReceiveFailed(String, Endpoint),
-}
-
-#[derive(Clone, Debug)]
-pub enum TcpErrorEvent {
-    ConnectionRefused(String, Endpoint),
-    ConnectionTimeout(String, Endpoint),
-}
-
-#[derive(Clone, Debug)]
-pub enum UdpEvent {
-    PacketSizeSent(u64),
-    PacketSizeReceived(u64),
+pub enum ErrorEvent {
+    ConnectionFailed {
+        endpoint: Endpoint,
+        reason: ConnectionFailureReason,
+        message: String,
+    },
+    SendFailed {
+        endpoint: Endpoint,
+        message_id: String,
+        reason: String,
+    },
+    ReceiveFailed {
+        endpoint: Endpoint,
+        reason: String,
+    },
+    SocketError {
+        endpoint: Endpoint,
+        reason: String,
+    },
 }
 
-#[derive(Clone, Debug)]
-pub enum TcpEvent {
-    ConnectionEstablished(String),
-    
-    ListenerStarted(String),
-    ConnectionClosed(String),
+#[derive(Copy, Clone, Debug)]
+pub enum ConnectionFailureReason {
+    Refused,
+    Timeout,
+    NetworkUnreachable,
+    Other,
+}
+
+impl ConnectionFailureReason {
+    pub fn from_io_error_kind(kind: std::io::ErrorKind) -> Self {
+        match kind {
+            std::io::ErrorKind::ConnectionRefused => Self::Refused,
+            std::io::ErrorKind::TimedOut => Self::Timeout,
+            std::io::ErrorKind::NetworkUnreachable => Self::NetworkUnreachable,
+            _ => Self::Other,
+        }
+    }
 }
 
 pub trait EngineObserver: Send + Sync {

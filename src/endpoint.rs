@@ -1,12 +1,13 @@
 use socket2::SockAddr;
 use std::{
+    fmt,
     io::{self, Error, ErrorKind},
     mem::{self, ManuallyDrop},
     ptr,
 };
 
 use crate::socket::AF_BP;
-#[derive(Clone, Debug)]
+#[derive(Clone, Debug, PartialEq)]
 pub enum Endpoint {
     Udp(String),
     Tcp(String),
@@ -14,14 +15,6 @@ pub enum Endpoint {
 }
 
 impl Endpoint {
-    pub fn to_string(&self) -> String {
-        match self {
-            Endpoint::Udp(s) => s.clone(),
-            Endpoint::Tcp(s) => s.clone(),
-            Endpoint::Bp(s) => s.clone(),
-        }
-    }
-
     pub fn from_str(input: &str) -> Result<Self, String> {
         // Split into scheme and addr parts
         let mut parts = input.splitn(2, ' ');
@@ -33,6 +26,16 @@ impl Endpoint {
             "tcp" => Ok(Endpoint::Tcp(addr.to_string())),
             "udp" => Ok(Endpoint::Udp(addr.to_string())),
             _ => Err(format!("Unsupported scheme: {}", scheme)),
+        }
+    }
+}
+
+impl fmt::Display for Endpoint {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        match self {
+            Endpoint::Udp(s) => write!(f, "{}", s),
+            Endpoint::Tcp(s) => write!(f, "{}", s),
+            Endpoint::Bp(s) => write!(f, "{}", s),
         }
     }
 }
@@ -59,21 +62,21 @@ struct IpnAddr {
     service_id: u32,
 }
 
-pub fn create_bp_sockaddr_with_string(eid_string: &str) -> io::Result<SockAddr> {
-    if eid_string.is_empty() {
+pub fn create_bp_sockaddr_with_string(endpoint_string: &str) -> io::Result<SockAddr> {
+    if endpoint_string.is_empty() {
         return Err(Error::new(
             ErrorKind::InvalidInput,
-            "EID string cannot be empty",
+            "Endpoint string cannot be empty",
         ));
     }
 
     // ---- Handle "ipn:" scheme ----
-    if let Some(eid_body) = eid_string.strip_prefix("ipn:") {
-        let parts: Vec<&str> = eid_body.split('.').collect();
+    if let Some(endpoint_body) = endpoint_string.strip_prefix("ipn:") {
+        let parts: Vec<&str> = endpoint_body.split('.').collect();
         if parts.len() != 2 {
             return Err(Error::new(
                 ErrorKind::InvalidInput,
-                format!("Invalid IPN EID format: {}", eid_string),
+                format!("Invalid IPN endpoint format: {}", endpoint_string),
             ));
         }
 
@@ -109,7 +112,7 @@ pub fn create_bp_sockaddr_with_string(eid_string: &str) -> io::Result<SockAddr> 
         Ok(address)
     }
     // ---- Handle unsupported or unimplemented schemes ----
-    else if eid_string.starts_with("dtn:") {
+    else if endpoint_string.starts_with("dtn:") {
         Err(Error::new(
             ErrorKind::Unsupported,
             "DTN scheme not yet implemented",
@@ -117,7 +120,7 @@ pub fn create_bp_sockaddr_with_string(eid_string: &str) -> io::Result<SockAddr> 
     } else {
         Err(Error::new(
             ErrorKind::InvalidInput,
-            format!("Unsupported scheme in EID: {}", eid_string),
+            format!("Unsupported scheme in endpoint: {}", endpoint_string),
         ))
     }
 }

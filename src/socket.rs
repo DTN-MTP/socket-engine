@@ -12,7 +12,8 @@ use crate::{
     endpoint::{create_bp_sockaddr_with_string, Endpoint},
     engine::TOKIO_RUNTIME,
     event::{
-        notify_all_observers, EngineObserver, ErrorEventSocket, EventSocket, GeneralSocketErrorEvent, GeneralSocketEvent, SocketEngineEvent, TcpEvent
+        notify_all_observers, EngineObserver, ConnectionEvent, DataEvent, ErrorEvent,
+        SocketEngineEvent,
     },
 };
 pub const AF_BP: c_int = 28;
@@ -26,8 +27,8 @@ pub struct GenericSocket {
 }
 
 impl GenericSocket {
-    pub fn new(eid: Endpoint) -> Result<Self, Box<dyn std::error::Error + Send + Sync>> {
-        let (domain, semtype, proto, address): (Domain, Type, Protocol, SockAddr) = match &eid {
+    pub fn new(endpoint: Endpoint) -> Result<Self, Box<dyn std::error::Error + Send + Sync>> {
+        let (domain, semtype, proto, address): (Domain, Type, Protocol, SockAddr) = match &endpoint {
             Endpoint::Udp(addr) => {
                 let std_sock = addr.parse()?;
                 (
@@ -57,7 +58,7 @@ impl GenericSocket {
         let socket = Socket::new(domain, semtype, Some(proto))?;
         return Ok(Self {
             socket: socket,
-            endpoint: eid,
+            endpoint: endpoint,
             sockaddr: address,
             listening: false,
         });
@@ -87,18 +88,15 @@ impl GenericSocket {
                         let mut buffer: [u8; 65507] = [0; 65507];
 
                         match socket.read(&mut buffer) {
-                            Ok(size) => {
-                                // Convert to Vec<u8> for consistency
-                                let data = buffer[..size].to_vec();
-                                notify_all_observers(
-                                    &observers_cloned,
-                                    &SocketEngineEvent::Info(EventSocket::General(
-                                        GeneralSocketEvent::DataReceived(
-                                            data,
-                                            endpoint_clone.clone(),
-                                        ),
-                                    )),
-                                );
+                            Ok(size) => {                            // Convert to Vec<u8> for consistency
+                            let data = buffer[..size].to_vec();
+                            notify_all_observers(
+                                &observers_cloned,
+                                &SocketEngineEvent::Data(DataEvent::Received {
+                                    data,
+                                    from: endpoint_clone.clone(),
+                                }),
+                            );
                             }
                             Err(ref e) if e.kind() == io::ErrorKind::WouldBlock => {
                                 thread::sleep(std::time::Duration::from_millis(10));
@@ -107,12 +105,10 @@ impl GenericSocket {
                                 // TODO: Not sur if this is the best way to handle errors
                                 notify_all_observers(
                                     &observers_cloned,
-                                    &SocketEngineEvent::Error(ErrorEventSocket::General(
-                                        GeneralSocketErrorEvent::ConnectionError(
-                                            "UDP/BP read error".to_string(),
-                                            endpoint_clone.clone(),
-                                        ),
-                                    )),
+                                    &SocketEngineEvent::Error(ErrorEvent::ReceiveFailed {
+                                        endpoint: endpoint_clone.clone(),
+                                        reason: "UDP/BP read error".to_string(),
+                                    }),
                                 );
                                 continue;
                             }
@@ -128,13 +124,17 @@ impl GenericSocket {
                     let socket = self.socket.try_clone()?;
                     move || loop {
                         match socket.accept() {
-                            Ok((stream, _peer)) => {
+                            Ok((stream, peer_addr)) => {
+                                let client_addr = match peer_addr.as_socket() {
+                                    Some(addr) => format!("{}:{}", addr.ip(), addr.port()),
+                                    None => format!("{:?}", peer_addr),
+                                };
                                 // TODO: should we add ConnectionAccepted event?
                                 notify_all_observers(
                                     &observers,
-                                    &SocketEngineEvent::Info(EventSocket::Tcp(
-                                        TcpEvent::ConnectionEstablished(endpoint_clone.to_string()),
-                                    )),
+                                    &SocketEngineEvent::Connection(ConnectionEvent::Established {
+                                        remote: Endpoint::Tcp(client_addr),
+                                    }),
                                 );
                                 let observers_cloned = observers.clone();
                                 let endpoint_for_handler = endpoint_clone.clone();
@@ -150,9 +150,9 @@ impl GenericSocket {
                             Err(e) if e.kind() == io::ErrorKind::Interrupted => {
                                 notify_all_observers(
                                     &observers,
-                                    &SocketEngineEvent::Info(EventSocket::Tcp(
-                                        TcpEvent::ConnectionClosed(endpoint_clone.to_string()),
-                                    )),
+                                    &SocketEngineEvent::Connection(ConnectionEvent::Closed {
+                                        remote: None,
+                                    }),
                                 );
                             }
                             Err(e) if e.kind() == io::ErrorKind::WouldBlock => {
@@ -162,12 +162,10 @@ impl GenericSocket {
                             Err(e) => {
                                 notify_all_observers(
                                     &observers,
-                                    &SocketEngineEvent::Error(ErrorEventSocket::General(
-                                        GeneralSocketErrorEvent::ConnectionError(
-                                            e.to_string(),
-                                            endpoint_clone.clone(),
-                                        ),
-                                    )),
+                                    &SocketEngineEvent::Error(ErrorEvent::SocketError {
+                                        endpoint: endpoint_clone.clone(),
+                                        reason: e.to_string(),
+                                    }),
                                 );
                                 break;
                             }
@@ -183,26 +181,23 @@ impl GenericSocket {
 async fn handle_tcp_connection(
     mut stream: std::net::TcpStream,
     observers: &Vec<Arc<Mutex<dyn EngineObserver + Send + Sync>>>,
-    _local_endpoint: Endpoint,
+    local_endpoint: Endpoint,
 ) {
     let peer_addr = match stream.peer_addr() {
         Ok(addr) => addr,
         Err(_) => {
             notify_all_observers(
                 observers,
-                &SocketEngineEvent::Error(ErrorEventSocket::General(
-                    GeneralSocketErrorEvent::ConnectionError(
-                        "Failed to get peer address".to_string(),
-                        _local_endpoint.clone(),
-                    ),
-                )),
+                &SocketEngineEvent::Error(ErrorEvent::SocketError {
+                    endpoint: local_endpoint.clone(),
+                    reason: "Failed to get peer address".to_string(),
+                }),
             );
             return;
         }
     };
 
     let peer_endpoint = Endpoint::Tcp(format!("{}:{}", peer_addr.ip(), peer_addr.port()));
-    let mut full_data = Vec::new();
     let mut buffer = [0; 1024];
 
     loop {
@@ -210,36 +205,35 @@ async fn handle_tcp_connection(
             Ok(0) => {
                 notify_all_observers(
                     observers,
-                    &SocketEngineEvent::Info(EventSocket::Tcp(TcpEvent::ConnectionClosed(
-                        peer_endpoint.to_string(),
-                    ))),
+                    &SocketEngineEvent::Connection(ConnectionEvent::Closed {
+                        remote: Some(peer_endpoint.clone()),
+                    }),
                 );
                 break;
             }
             Ok(size) => {
                 let received_data = buffer[..size].to_vec();
-                full_data.extend_from_slice(&received_data);
                 
-                // Envoyer l'événement immédiatement quand des données sont reçues
                 notify_all_observers(
                     observers,
-                    &SocketEngineEvent::Info(EventSocket::General(
-                        GeneralSocketEvent::DataReceived(received_data, peer_endpoint.clone()),
-                    )),
+                    &SocketEngineEvent::Data(DataEvent::Received {
+                        data: received_data,
+                        from: peer_endpoint.clone(),
+                    }),
                 );
             }
             Err(_e) => {
                 notify_all_observers(
                     observers,
-                    &SocketEngineEvent::Error(ErrorEventSocket::General(
-                        GeneralSocketErrorEvent::ReceiveFailed(
-                            peer_endpoint.to_string(),
-                            _local_endpoint,
-                        ),
-                    )),
+                    &SocketEngineEvent::Error(ErrorEvent::ReceiveFailed {
+                        endpoint: local_endpoint,
+                        reason: format!("{}", peer_endpoint),
+                    }),
                 );
                 break;
             }
+
+        
         }
     }
 }
