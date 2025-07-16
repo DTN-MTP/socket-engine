@@ -1,8 +1,8 @@
 use crate::{
     endpoint::Endpoint,
     event::{
-        notify_all_observers, EngineObserver, ConnectionEvent, DataEvent, ErrorEvent,
-        ConnectionFailureReason, SocketEngineEvent,
+        notify_all_observers, ConnectionEvent, ConnectionFailureReason, DataEvent, EngineObserver,
+        ErrorEvent, SocketEngineEvent,
     },
     socket::GenericSocket,
 };
@@ -28,47 +28,45 @@ impl Engine {
     }
     pub fn add_observer(&mut self, obs: Arc<Mutex<dyn EngineObserver + Send + Sync>>) {
         self.observers.push(obs);
-        }
+    }
 
     pub fn start_listener_async(&self, endpoint: Endpoint) {
         let observers = self.observers.clone();
         let endpoint_clone = endpoint.clone();
-        
-        // TODO: should remove spawn_blocking and use async directly
-        TOKIO_RUNTIME.spawn_blocking(move || {
-            match GenericSocket::new(endpoint) {
-                Ok(mut sock) => {
-                    if let Err(e) = sock.start_listener(observers.clone()) {
-                        notify_all_observers(
-                            &observers,
-                            &SocketEngineEvent::Error(ErrorEvent::SocketError {
-                                endpoint: sock.endpoint.clone(),
-                                reason: e.to_string(),
-                            }),
-                        );
-                    } else {
-                        if let Endpoint::Tcp(_) = sock.endpoint {
-                            notify_all_observers(
-                                &observers,
-                                &SocketEngineEvent::Connection(ConnectionEvent::ListenerStarted {
-                                    endpoint: sock.endpoint.clone(),
-                                }),
-                            );
-                        }
-                    }
-                }
-                Err(e) => {
+
+        match GenericSocket::new(endpoint) {
+            Ok(mut sock) => {
+                if let Err(e) = sock.start_listener(observers.clone()) {
                     notify_all_observers(
                         &observers,
                         &SocketEngineEvent::Error(ErrorEvent::SocketError {
-                            endpoint: endpoint_clone,
+                            endpoint: sock.endpoint.clone(),
                             reason: e.to_string(),
                         }),
                     );
+                } else {
+                    if let Endpoint::Tcp(_) = sock.endpoint {
+                        notify_all_observers(
+                            &observers,
+                            &SocketEngineEvent::Connection(ConnectionEvent::ListenerStarted {
+                                endpoint: sock.endpoint.clone(),
+                            }),
+                        );
+                    }
                 }
             }
-        });
+            Err(e) => {
+                notify_all_observers(
+                    &observers,
+                    &SocketEngineEvent::Error(ErrorEvent::SocketError {
+                        endpoint: endpoint_clone,
+                        reason: e.to_string(),
+                    }),
+                );
+            }
+        }
     }
+
     pub fn send_async(
         &self,
         endpoint: Endpoint,
@@ -107,11 +105,7 @@ impl Engine {
                     }
                 }
                 Endpoint::Tcp(_) => {
-                    
-                    if let Err(err) = generic_socket
-                        .socket
-                        .connect(&generic_socket.sockaddr)
-                    {
+                    if let Err(err) = generic_socket.socket.connect(&generic_socket.sockaddr) {
                         if err.kind() == std::io::ErrorKind::ConnectionRefused {
                             notify_all_observers(
                                 &observers,
@@ -141,14 +135,13 @@ impl Engine {
                             );
                         }
                     } else {
-                        
                         notify_all_observers(
                             &observers,
                             &SocketEngineEvent::Connection(ConnectionEvent::Established {
                                 remote: endpoint_ref.clone(), // Remote is the target we're connecting to
                             }),
                         );
- 
+
                         if let Err(err) = generic_socket.socket.write_all(&data.as_slice()) {
                             notify_all_observers(
                                 &observers,
@@ -199,7 +192,6 @@ impl Engine {
                     }
                 }
             }
-
         });
         Ok(())
     }
