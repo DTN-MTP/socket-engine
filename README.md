@@ -29,8 +29,10 @@ This design allows for flexible event handling, enabling multiple components to 
 To use the socket engine, you can run the provided example with either UDP or TCP protocols. The command line arguments specify the protocol and endpoints for listening and sending data.
 
 ```sh
-# With udp (localhost, listen on 8888 send to 9999)
-cargo run -- "udp 127.0.0.1:8888" "udp 127.0.0.1:9999"
-# Same for tcp
-cargo run -- "tcp 127.0.0.1:9999" "tcp 127.0.0.1:8888"
+# --- UDP Usage ---
+cargo run -- "udp 127.0.0.1:8888" "udp 127.0.0.1:9999" # Peer 1
+cargo run -- "udp 127.0.0.1:9999" "udp 127.0.0.1:8888" # Peer 2
+# --- TCP Usage ---
+cargo run -- "tcp 127.0.0.1:9999" "tcp 127.0.0.1:8888" # Peer 1
+cargo run -- "tcp 127.0.0.1:8888" "tcp 127.0.0.1:9999" # Peer 2
 ```
