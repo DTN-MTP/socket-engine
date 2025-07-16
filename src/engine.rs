@@ -1,9 +1,8 @@
 use crate::{
     endpoint::Endpoint,
     event::{
-        notify_all_observers, EngineObserver, ErrorEventSocket, EventSocket,
-        GeneralSocketErrorEvent, GeneralSocketEvent, SocketEngineEvent, TcpErrorEvent, TcpEvent,
-        UdpEvent,
+        notify_all_observers, EngineObserver, ConnectionEvent, DataEvent, ErrorEvent,
+        ConnectionFailureReason, SocketEngineEvent,
     },
     socket::GenericSocket,
 };
@@ -42,33 +41,29 @@ impl Engine {
                     if let Err(e) = sock.start_listener(observers.clone()) {
                         notify_all_observers(
                             &observers,
-                            &SocketEngineEvent::Error(ErrorEventSocket::General(
-                                GeneralSocketErrorEvent::ConnectionError(
-                                    e.to_string(),
-                                    sock.endpoint.clone(),
-                                ),
-                            )),
+                            &SocketEngineEvent::Error(ErrorEvent::SocketError {
+                                endpoint: sock.endpoint.clone(),
+                                reason: e.to_string(),
+                            }),
                         );
                     } else {
                         if let Endpoint::Tcp(_) = sock.endpoint {
                             notify_all_observers(
                                 &observers,
-                                &SocketEngineEvent::Info(EventSocket::Tcp(TcpEvent::ListenerStarted(
-                                    sock.endpoint.to_string(),
-                                ))),
+                                &SocketEngineEvent::Connection(ConnectionEvent::ListenerStarted {
+                                    endpoint: sock.endpoint.clone(),
+                                }),
                             );
                         }
                     }
                 }
-                Err(_) => {
+                Err(e) => {
                     notify_all_observers(
                         &observers,
-                        &SocketEngineEvent::Error(ErrorEventSocket::General(
-                            GeneralSocketErrorEvent::ConnectionError(
-                                "Failed to create socket".to_string(),
-                                endpoint_clone,
-                            ),
-                        )),
+                        &SocketEngineEvent::Error(ErrorEvent::SocketError {
+                            endpoint: endpoint_clone,
+                            reason: e.to_string(),
+                        }),
                     );
                 }
             }
@@ -83,29 +78,31 @@ impl Engine {
         let observers = self.observers.clone();
         TOKIO_RUNTIME.spawn(async move {
             let mut generic_socket = GenericSocket::new(endpoint).unwrap();
+            let endpoint_ref = &generic_socket.endpoint;
+            let data_uuid_ref = &data_uuid;
 
             match generic_socket.endpoint {
                 Endpoint::Bp(_) | Endpoint::Udp(_) => {
                     if let Err(err) = generic_socket
                         .socket
-                        .send_to(&data.as_slice(), &generic_socket.sockaddr.clone())
+                        .send_to(&data.as_slice(), &generic_socket.sockaddr)
                     {
                         notify_all_observers(
                             &observers,
-                            &SocketEngineEvent::Error(ErrorEventSocket::General(
-                                GeneralSocketErrorEvent::SendFailed(
-                                    err.to_string(),
-                                    data_uuid.clone(),
-                                    generic_socket.endpoint.clone(),
-                                ),
-                            )),
+                            &SocketEngineEvent::Error(ErrorEvent::SendFailed {
+                                endpoint: endpoint_ref.clone(),
+                                message_id: data_uuid_ref.clone(),
+                                reason: err.to_string(),
+                            }),
                         );
                     } else {
                         notify_all_observers(
                             &observers,
-                            &SocketEngineEvent::Info(EventSocket::Udp(UdpEvent::PacketSizeSent(
-                                data.len() as u64,
-                            ))),
+                            &SocketEngineEvent::Data(DataEvent::Sent {
+                                message_id: data_uuid_ref.clone(),
+                                to: endpoint_ref.clone(),
+                                bytes_sent: data.len(),
+                            }),
                         );
                     }
                 }
@@ -113,104 +110,90 @@ impl Engine {
                     
                     if let Err(err) = generic_socket
                         .socket
-                        .connect(&generic_socket.sockaddr.clone())
+                        .connect(&generic_socket.sockaddr)
                     {
                         if err.kind() == std::io::ErrorKind::ConnectionRefused {
                             notify_all_observers(
                                 &observers,
-                                &SocketEngineEvent::Error(ErrorEventSocket::Tcp(
-                                    TcpErrorEvent::ConnectionRefused(
-                                        err.to_string(),
-                                        generic_socket.endpoint.clone(),
-                                    ),
-                                )),
+                                &SocketEngineEvent::Error(ErrorEvent::ConnectionFailed {
+                                    endpoint: endpoint_ref.clone(),
+                                    reason: ConnectionFailureReason::Refused,
+                                    message: err.to_string(),
+                                }),
                             );
-                        } 
-                        if err.kind() == std::io::ErrorKind::TimedOut {
+                        } else if err.kind() == std::io::ErrorKind::TimedOut {
                             notify_all_observers(
                                 &observers,
-                                &SocketEngineEvent::Error(ErrorEventSocket::Tcp(
-                                    TcpErrorEvent::ConnectionTimeout(
-                                        err.to_string(),
-                                        generic_socket.endpoint.clone(),
-                                    ),
-                                )),
+                                &SocketEngineEvent::Error(ErrorEvent::ConnectionFailed {
+                                    endpoint: endpoint_ref.clone(),
+                                    reason: ConnectionFailureReason::Timeout,
+                                    message: err.to_string(),
+                                }),
                             );
                         } else {
                             notify_all_observers(
                                 &observers,
-                                &SocketEngineEvent::Error(ErrorEventSocket::General(
-                                    GeneralSocketErrorEvent::ConnectionError(
-                                        err.to_string(),
-                                        generic_socket.endpoint.clone(),
-                                    ),
-                                )),
+                                &SocketEngineEvent::Error(ErrorEvent::ConnectionFailed {
+                                    endpoint: endpoint_ref.clone(),
+                                    reason: ConnectionFailureReason::Other,
+                                    message: err.to_string(),
+                                }),
                             );
                         }
                     } else {
                         
                         notify_all_observers(
                             &observers,
-                            &SocketEngineEvent::Info(EventSocket::Tcp(TcpEvent::ConnectionEstablished(
-                                generic_socket.endpoint.to_string(),
-                            ))),
+                            &SocketEngineEvent::Connection(ConnectionEvent::Established {
+                                remote: endpoint_ref.clone(), // Remote is the target we're connecting to
+                            }),
                         );
  
                         if let Err(err) = generic_socket.socket.write_all(&data.as_slice()) {
                             notify_all_observers(
                                 &observers,
-                                &SocketEngineEvent::Error(ErrorEventSocket::General(
-                                    GeneralSocketErrorEvent::SendFailed(
-                                        err.to_string(),
-                                        data_uuid.clone(),
-                                        generic_socket.endpoint.clone(),
-                                    ),
-                                )),
+                                &SocketEngineEvent::Error(ErrorEvent::SendFailed {
+                                    endpoint: endpoint_ref.clone(),
+                                    message_id: data_uuid_ref.clone(),
+                                    reason: err.to_string(),
+                                }),
                             );
                         } else {
                             notify_all_observers(
                                 &observers,
-                                &SocketEngineEvent::Info(EventSocket::General(
-                                    GeneralSocketEvent::DataSent(
-                                        data_uuid.clone(),
-                                        generic_socket.endpoint.clone(),
-                                    ),
-                                )),
+                                &SocketEngineEvent::Data(DataEvent::Sent {
+                                    message_id: data_uuid_ref.clone(),
+                                    to: endpoint_ref.clone(),
+                                    bytes_sent: data.len(),
+                                }),
                             );
                         }
 
                         if let Err(err) = generic_socket.socket.flush() {
                             notify_all_observers(
                                 &observers,
-                                &SocketEngineEvent::Error(ErrorEventSocket::General(
-                                    GeneralSocketErrorEvent::SendFailed(
-                                        err.to_string(),
-                                        data_uuid.clone(),
-                                        generic_socket.endpoint.clone(),
-                                    ),
-                                )),
+                                &SocketEngineEvent::Error(ErrorEvent::SendFailed {
+                                    endpoint: endpoint_ref.clone(),
+                                    message_id: data_uuid_ref.clone(),
+                                    reason: err.to_string(),
+                                }),
                             );
                         }
 
-                        
-                       
                         if let Err(err) = generic_socket.socket.shutdown(std::net::Shutdown::Both) {
                             notify_all_observers(
                                 &observers,
-                                &SocketEngineEvent::Error(ErrorEventSocket::General(
-                                    GeneralSocketErrorEvent::SendFailed(
-                                        format!("Shutdown failed: {}", err),
-                                        data_uuid.clone(),
-                                        generic_socket.endpoint.clone(),
-                                    ),
-                                )),
+                                &SocketEngineEvent::Error(ErrorEvent::SocketError {
+                                    endpoint: generic_socket.endpoint.clone(),
+                                    reason: format!("Shutdown failed: {}", err),
+                                }),
                             );
                         } else {
                             notify_all_observers(
                                 &observers,
-                                &SocketEngineEvent::Info(EventSocket::Tcp(TcpEvent::ConnectionClosed(
-                                    data_uuid.clone(),
-                                ))),
+                                &SocketEngineEvent::Connection(ConnectionEvent::Closed {
+                                    remote: Some(generic_socket.endpoint.clone()),
+                                }),
                             );
                         }
                     }
