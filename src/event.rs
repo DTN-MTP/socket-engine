@@ -24,15 +24,9 @@ pub enum DataEvent {
 
 #[derive(Clone, Debug)]
 pub enum ConnectionEvent {
-    ListenerStarted {
-        endpoint: Endpoint,
-    },
-    Established {
-        remote: Endpoint,
-    },
-    Closed {
-        remote: Option<Endpoint>,
-    },
+    ListenerStarted { endpoint: Endpoint },
+    Established { remote: Endpoint },
+    Closed { remote: Option<Endpoint> },
 }
 
 #[derive(Clone, Debug)]

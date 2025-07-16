@@ -12,12 +12,11 @@ use crate::{
     endpoint::{create_bp_sockaddr_with_string, Endpoint},
     engine::TOKIO_RUNTIME,
     event::{
-        notify_all_observers, EngineObserver, ConnectionEvent, DataEvent, ErrorEvent,
+        notify_all_observers, ConnectionEvent, DataEvent, EngineObserver, ErrorEvent,
         SocketEngineEvent,
     },
 };
 pub const AF_BP: c_int = 28;
-
 
 pub struct GenericSocket {
     pub socket: Socket,
@@ -28,7 +27,8 @@ pub struct GenericSocket {
 
 impl GenericSocket {
     pub fn new(endpoint: Endpoint) -> Result<Self, Box<dyn std::error::Error + Send + Sync>> {
-        let (domain, semtype, proto, address): (Domain, Type, Protocol, SockAddr) = match &endpoint {
+        let (domain, semtype, proto, address): (Domain, Type, Protocol, SockAddr) = match &endpoint
+        {
             Endpoint::Udp(addr) => {
                 let std_sock = addr.parse()?;
                 (
@@ -88,15 +88,16 @@ impl GenericSocket {
                         let mut buffer: [u8; 65507] = [0; 65507];
 
                         match socket.read(&mut buffer) {
-                            Ok(size) => {                            // Convert to Vec<u8> for consistency
-                            let data = buffer[..size].to_vec();
-                            notify_all_observers(
-                                &observers_cloned,
-                                &SocketEngineEvent::Data(DataEvent::Received {
-                                    data,
-                                    from: endpoint_clone.clone(),
-                                }),
-                            );
+                            Ok(size) => {
+                                // Convert to Vec<u8> for consistency
+                                let data = buffer[..size].to_vec();
+                                notify_all_observers(
+                                    &observers_cloned,
+                                    &SocketEngineEvent::Data(DataEvent::Received {
+                                        data,
+                                        from: endpoint_clone.clone(),
+                                    }),
+                                );
                             }
                             Err(ref e) if e.kind() == io::ErrorKind::WouldBlock => {
                                 thread::sleep(std::time::Duration::from_millis(10));
@@ -213,7 +214,7 @@ async fn handle_tcp_connection(
             }
             Ok(size) => {
                 let received_data = buffer[..size].to_vec();
-                
+
                 notify_all_observers(
                     observers,
                     &SocketEngineEvent::Data(DataEvent::Received {
@@ -232,8 +233,6 @@ async fn handle_tcp_connection(
                 );
                 break;
             }
-
-        
         }
     }
 }

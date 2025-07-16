@@ -1,7 +1,7 @@
 use std::env;
 use std::io::{self, BufRead, Write};
-use std::sync::{Arc, Mutex};
 use std::sync::atomic::{AtomicBool, Ordering};
+use std::sync::{Arc, Mutex};
 
 use socket_engine::endpoint::Endpoint;
 use socket_engine::engine::Engine;
@@ -25,20 +25,22 @@ impl EngineObserver for Obs {
         if WAITING_FOR_INPUT.load(Ordering::Relaxed) {
             print!("\r\x1b[K"); // Clear current line
         }
-        
+
         match event {
             socket_engine::event::SocketEngineEvent::Data(data_event) => match data_event {
                 socket_engine::event::DataEvent::Received { data, from } => {
-                    println!("[RECV] From {}: \"{}\"", 
-                        format_endpoint(&from), 
+                    println!(
+                        "[RECV] From {}: \"{}\"",
+                        format_endpoint(&from),
                         String::from_utf8_lossy(&data).trim()
                     );
                 }
-                socket_engine::event::DataEvent::Sent { message_id: _, to, bytes_sent } => {
-                    println!("[SENT] To {} ({} bytes)", 
-                        format_endpoint(&to), 
-                        bytes_sent
-                    );
+                socket_engine::event::DataEvent::Sent {
+                    message_id: _,
+                    to,
+                    bytes_sent,
+                } => {
+                    println!("[SENT] To {} ({} bytes)", format_endpoint(&to), bytes_sent);
                 }
             },
             socket_engine::event::SocketEngineEvent::Connection(conn_event) => match conn_event {
@@ -46,7 +48,10 @@ impl EngineObserver for Obs {
                     println!("[INFO] Listener started on {}", format_endpoint(&endpoint));
                 }
                 socket_engine::event::ConnectionEvent::Established { remote } => {
-                    println!("[INFO] Connection established with {}", format_endpoint(&remote));
+                    println!(
+                        "[INFO] Connection established with {}",
+                        format_endpoint(&remote)
+                    );
                 }
                 socket_engine::event::ConnectionEvent::Closed { remote } => {
                     if let Some(remote) = remote {
@@ -57,21 +62,46 @@ impl EngineObserver for Obs {
                 }
             },
             socket_engine::event::SocketEngineEvent::Error(err_event) => match err_event {
-                socket_engine::event::ErrorEvent::ConnectionFailed { endpoint, reason: _, message } => {
-                    println!("[ERROR] Connection failed to {}: {}", format_endpoint(&endpoint), message);
+                socket_engine::event::ErrorEvent::ConnectionFailed {
+                    endpoint,
+                    reason: _,
+                    message,
+                } => {
+                    println!(
+                        "[ERROR] Connection failed to {}: {}",
+                        format_endpoint(&endpoint),
+                        message
+                    );
                 }
-                socket_engine::event::ErrorEvent::SendFailed { endpoint, message_id, reason } => {
-                    println!("[ERROR] Send failed to {} for id {}: {}", format_endpoint(&endpoint), message_id, reason);
+                socket_engine::event::ErrorEvent::SendFailed {
+                    endpoint,
+                    message_id,
+                    reason,
+                } => {
+                    println!(
+                        "[ERROR] Send failed to {} for id {}: {}",
+                        format_endpoint(&endpoint),
+                        message_id,
+                        reason
+                    );
                 }
                 socket_engine::event::ErrorEvent::ReceiveFailed { endpoint, reason } => {
-                    println!("[ERROR] Receive failed from {}: {}", format_endpoint(&endpoint), reason);
+                    println!(
+                        "[ERROR] Receive failed from {}: {}",
+                        format_endpoint(&endpoint),
+                        reason
+                    );
                 }
                 socket_engine::event::ErrorEvent::SocketError { endpoint, reason } => {
-                    println!("[ERROR] Socket error on {}: {}", format_endpoint(&endpoint), reason);
+                    println!(
+                        "[ERROR] Socket error on {}: {}",
+                        format_endpoint(&endpoint),
+                        reason
+                    );
                 }
             },
         }
-        
+
         // Redisplay prompt if we were waiting for input
         if WAITING_FOR_INPUT.load(Ordering::Relaxed) {
             print!("Enter message: ");
@@ -85,7 +115,10 @@ fn main() -> io::Result<()> {
     let args: Vec<String> = env::args().collect();
     if args.len() != 3 {
         eprintln!("Usage: {} <local-endpoint> <distant-endpoint>", args[0]);
-        eprintln!("Example: {} \"udp 127.0.0.1:8888\" \"udp 127.0.0.1:9999\"", args[0]);
+        eprintln!(
+            "Example: {} \"udp 127.0.0.1:8888\" \"udp 127.0.0.1:9999\"",
+            args[0]
+        );
         std::process::exit(1);
     }
 
@@ -128,11 +161,11 @@ fn main() -> io::Result<()> {
         WAITING_FOR_INPUT.store(true, Ordering::Relaxed);
         print!("Enter message: ");
         io::stdout().flush().unwrap(); // Force flush to show prompt immediately
-        
+
         line.clear();
         let n = reader.read_line(&mut line)?;
         WAITING_FOR_INPUT.store(false, Ordering::Relaxed);
-        
+
         if n == 0 {
             // EOF
             println!("Goodbye!");
