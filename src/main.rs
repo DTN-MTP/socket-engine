@@ -29,19 +29,22 @@ impl EngineObserver for Obs {
         match event {
             socket_engine::event::SocketEngineEvent::Data(data_event) => match data_event {
                 socket_engine::event::DataEvent::Received { data, from } => {
-                    println!(
-                        "[RECV] From {}: \"{}\"",
-                        format_endpoint(&from),
-                        String::from_utf8_lossy(&data).trim()
-                    );
-                }
+                                println!(
+                                    "[RECV] From {}: \"{}\"",
+                                    format_endpoint(&from),
+                                    String::from_utf8_lossy(&data).trim()
+                                );
+                            }
                 socket_engine::event::DataEvent::Sent {
-                    message_id: _,
-                    to,
-                    bytes_sent,
-                } => {
-                    println!("[SENT] To {} ({} bytes)", format_endpoint(&to), bytes_sent);
-                }
+                                message_id: _,
+                                to,
+                                bytes_sent,
+                            } => {
+                                println!("[SENT] To {} ({} bytes)", format_endpoint(&to), bytes_sent);
+                            }
+                socket_engine::event::DataEvent::Sending { message_id, to, bytes } => {
+                                println!("[SENDING] To {} ({} bytes, token: {})", to, bytes, message_id);
+                            },
             },
             socket_engine::event::SocketEngineEvent::Connection(conn_event) => match conn_event {
                 socket_engine::event::ConnectionEvent::ListenerStarted { endpoint } => {
@@ -65,23 +68,23 @@ impl EngineObserver for Obs {
                 socket_engine::event::ErrorEvent::ConnectionFailed {
                     endpoint,
                     reason: _,
-                    message,
+                    token,
                 } => {
                     println!(
                         "[ERROR] Connection failed to {}: {}",
                         format_endpoint(&endpoint),
-                        message
+                        token
                     );
                 }
                 socket_engine::event::ErrorEvent::SendFailed {
                     endpoint,
-                    message_id,
+                    token,
                     reason,
                 } => {
                     println!(
                         "[ERROR] Send failed to {} for id {}: {}",
                         format_endpoint(&endpoint),
-                        message_id,
+                        token,
                         reason
                     );
                 }

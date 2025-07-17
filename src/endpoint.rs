@@ -28,6 +28,13 @@ impl Endpoint {
             _ => Err(format!("Unsupported scheme: {}", scheme)),
         }
     }
+    pub fn to_string(&self) -> String{
+        match self {
+            Endpoint::Udp(addr) => format!("udp {}", addr).to_string(),
+            Endpoint::Tcp(addr) => format!("tcp {}", addr).to_string(),
+            Endpoint::Bp(addr) => format!("bp {}", addr).to_string(),
+        }
+    }
 }
 
 impl fmt::Display for Endpoint {
