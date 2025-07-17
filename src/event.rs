@@ -15,6 +15,11 @@ pub enum DataEvent {
         data: Vec<u8>,
         from: Endpoint,
     },
+    Sending {
+        message_id: String,
+        to: Endpoint,
+        bytes: usize,
+    },
     Sent {
         message_id: String,
         to: Endpoint,
@@ -34,11 +39,11 @@ pub enum ErrorEvent {
     ConnectionFailed {
         endpoint: Endpoint,
         reason: ConnectionFailureReason,
-        message: String,
+        token: String,
     },
     SendFailed {
         endpoint: Endpoint,
-        message_id: String,
+        token: String,
         reason: String,
     },
     ReceiveFailed {

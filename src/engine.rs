@@ -71,13 +71,18 @@ impl Engine {
         &self,
         endpoint: Endpoint,
         data: Vec<u8>,
-        data_uuid: String,
+        token: String,
     ) -> Result<(), Box<dyn std::error::Error + Send + Sync>> {
         let observers = self.observers.clone();
         TOKIO_RUNTIME.spawn(async move {
             let mut generic_socket = GenericSocket::new(endpoint).unwrap();
             let endpoint_ref = &generic_socket.endpoint;
-            let data_uuid_ref = &data_uuid;
+            let data_uuid_ref = &token;
+
+            notify_all_observers(
+                            &observers,
+                            &&SocketEngineEvent::Data(DataEvent::Sending { message_id: data_uuid_ref.clone(), to: endpoint_ref.clone(), bytes: data.len() } ),
+                        );
 
             match generic_socket.endpoint {
                 Endpoint::Bp(_) | Endpoint::Udp(_) => {
@@ -89,7 +94,7 @@ impl Engine {
                             &observers,
                             &SocketEngineEvent::Error(ErrorEvent::SendFailed {
                                 endpoint: endpoint_ref.clone(),
-                                message_id: data_uuid_ref.clone(),
+                                token: data_uuid_ref.clone(),
                                 reason: err.to_string(),
                             }),
                         );
@@ -112,7 +117,7 @@ impl Engine {
                                 &SocketEngineEvent::Error(ErrorEvent::ConnectionFailed {
                                     endpoint: endpoint_ref.clone(),
                                     reason: ConnectionFailureReason::Refused,
-                                    message: err.to_string(),
+                                    token: err.to_string(),
                                 }),
                             );
                         } else if err.kind() == std::io::ErrorKind::TimedOut {
@@ -121,7 +126,7 @@ impl Engine {
                                 &SocketEngineEvent::Error(ErrorEvent::ConnectionFailed {
                                     endpoint: endpoint_ref.clone(),
                                     reason: ConnectionFailureReason::Timeout,
-                                    message: err.to_string(),
+                                    token: err.to_string(),
                                 }),
                             );
                         } else {
@@ -130,7 +135,7 @@ impl Engine {
                                 &SocketEngineEvent::Error(ErrorEvent::ConnectionFailed {
                                     endpoint: endpoint_ref.clone(),
                                     reason: ConnectionFailureReason::Other,
-                                    message: err.to_string(),
+                                    token: err.to_string(),
                                 }),
                             );
                         }
@@ -147,7 +152,7 @@ impl Engine {
                                 &observers,
                                 &SocketEngineEvent::Error(ErrorEvent::SendFailed {
                                     endpoint: endpoint_ref.clone(),
-                                    message_id: data_uuid_ref.clone(),
+                                    token: data_uuid_ref.clone(),
                                     reason: err.to_string(),
                                 }),
                             );
@@ -167,7 +172,7 @@ impl Engine {
                                 &observers,
                                 &SocketEngineEvent::Error(ErrorEvent::SendFailed {
                                     endpoint: endpoint_ref.clone(),
-                                    message_id: data_uuid_ref.clone(),
+                                    token: data_uuid_ref.clone(),
                                     reason: err.to_string(),
                                 }),
                             );
@@ -176,8 +181,9 @@ impl Engine {
                         if let Err(err) = generic_socket.socket.shutdown(std::net::Shutdown::Both) {
                             notify_all_observers(
                                 &observers,
-                                &SocketEngineEvent::Error(ErrorEvent::SocketError {
+                                &SocketEngineEvent::Error(ErrorEvent::SendFailed {
                                     endpoint: generic_socket.endpoint.clone(),
+                                    token: data_uuid_ref.clone(),
                                     reason: format!("Shutdown failed: {}", err),
                                 }),
                             );
