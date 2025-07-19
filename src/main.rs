@@ -29,22 +29,29 @@ impl EngineObserver for Obs {
         match event {
             socket_engine::event::SocketEngineEvent::Data(data_event) => match data_event {
                 socket_engine::event::DataEvent::Received { data, from } => {
-                                println!(
-                                    "[RECV] From {}: \"{}\"",
-                                    format_endpoint(&from),
-                                    String::from_utf8_lossy(&data).trim()
-                                );
-                            }
+                    println!(
+                        "[RECV] From {}: \"{}\"",
+                        format_endpoint(&from),
+                        String::from_utf8_lossy(&data).trim()
+                    );
+                }
                 socket_engine::event::DataEvent::Sent {
-                                message_id: _,
-                                to,
-                                bytes_sent,
-                            } => {
-                                println!("[SENT] To {} ({} bytes)", format_endpoint(&to), bytes_sent);
-                            }
-                socket_engine::event::DataEvent::Sending { message_id, to, bytes } => {
-                                println!("[SENDING] To {} ({} bytes, token: {})", to, bytes, message_id);
-                            },
+                    message_id: _,
+                    to,
+                    bytes_sent,
+                } => {
+                    println!("[SENT] To {} ({} bytes)", format_endpoint(&to), bytes_sent);
+                }
+                socket_engine::event::DataEvent::Sending {
+                    message_id,
+                    to,
+                    bytes,
+                } => {
+                    println!(
+                        "[SENDING] To {} ({} bytes, token: {})",
+                        to, bytes, message_id
+                    );
+                }
             },
             socket_engine::event::SocketEngineEvent::Connection(conn_event) => match conn_event {
                 socket_engine::event::ConnectionEvent::ListenerStarted { endpoint } => {

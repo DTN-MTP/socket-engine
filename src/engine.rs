@@ -31,40 +31,41 @@ impl Engine {
     }
 
     pub fn start_listener_async(&self, endpoint: Endpoint) {
-        let observers = self.observers.clone();
-        let endpoint_clone = endpoint.clone();
-
-        match GenericSocket::new(endpoint) {
-            Ok(mut sock) => {
-                if let Err(e) = sock.start_listener(observers.clone()) {
+        TOKIO_RUNTIME.spawn_blocking({
+            let observers = self.observers.clone();
+            let endpoint_clone = endpoint.clone();
+            move || match GenericSocket::new(endpoint) {
+                Ok(mut sock) => {
+                    if let Err(e) = sock.start_listener(observers.clone()) {
+                        notify_all_observers(
+                            &observers,
+                            &SocketEngineEvent::Error(ErrorEvent::SocketError {
+                                endpoint: sock.endpoint.clone(),
+                                reason: e.to_string(),
+                            }),
+                        );
+                    } else {
+                        if let Endpoint::Tcp(_) = sock.endpoint {
+                            notify_all_observers(
+                                &observers,
+                                &SocketEngineEvent::Connection(ConnectionEvent::ListenerStarted {
+                                    endpoint: sock.endpoint.clone(),
+                                }),
+                            );
+                        }
+                    }
+                }
+                Err(e) => {
                     notify_all_observers(
                         &observers,
                         &SocketEngineEvent::Error(ErrorEvent::SocketError {
-                            endpoint: sock.endpoint.clone(),
+                            endpoint: endpoint_clone,
                             reason: e.to_string(),
                         }),
                     );
-                } else {
-                    if let Endpoint::Tcp(_) = sock.endpoint {
-                        notify_all_observers(
-                            &observers,
-                            &SocketEngineEvent::Connection(ConnectionEvent::ListenerStarted {
-                                endpoint: sock.endpoint.clone(),
-                            }),
-                        );
-                    }
                 }
             }
-            Err(e) => {
-                notify_all_observers(
-                    &observers,
-                    &SocketEngineEvent::Error(ErrorEvent::SocketError {
-                        endpoint: endpoint_clone,
-                        reason: e.to_string(),
-                    }),
-                );
-            }
-        }
+        });
     }
 
     pub fn send_async(
@@ -80,9 +81,13 @@ impl Engine {
             let data_uuid_ref = &token;
 
             notify_all_observers(
-                            &observers,
-                            &&SocketEngineEvent::Data(DataEvent::Sending { message_id: data_uuid_ref.clone(), to: endpoint_ref.clone(), bytes: data.len() } ),
-                        );
+                &observers,
+                &&SocketEngineEvent::Data(DataEvent::Sending {
+                    message_id: data_uuid_ref.clone(),
+                    to: endpoint_ref.clone(),
+                    bytes: data.len(),
+                }),
+            );
 
             match generic_socket.endpoint {
                 Endpoint::Bp(_) | Endpoint::Udp(_) => {

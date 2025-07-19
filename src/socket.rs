@@ -81,98 +81,96 @@ impl GenericSocket {
         match &self.endpoint {
             Endpoint::Udp(_addr) | Endpoint::Bp(_addr) => {
                 let endpoint_clone = self.endpoint.clone();
-                TOKIO_RUNTIME.spawn_blocking({
-                    let mut socket = self.socket.try_clone()?;
-                    let observers_cloned = observers.clone();
-                    move || loop {
-                        let mut buffer: [u8; 65507] = [0; 65507];
 
-                        match socket.read(&mut buffer) {
-                            Ok(size) => {
-                                // Convert to Vec<u8> for consistency
-                                let data = buffer[..size].to_vec();
-                                notify_all_observers(
-                                    &observers_cloned,
-                                    &SocketEngineEvent::Data(DataEvent::Received {
-                                        data,
-                                        from: endpoint_clone.clone(),
-                                    }),
-                                );
-                            }
-                            Err(ref e) if e.kind() == io::ErrorKind::WouldBlock => {
-                                thread::sleep(std::time::Duration::from_millis(10));
-                            }
-                            Err(_e) => {
-                                // TODO: Not sur if this is the best way to handle errors
-                                notify_all_observers(
-                                    &observers_cloned,
-                                    &SocketEngineEvent::Error(ErrorEvent::ReceiveFailed {
-                                        endpoint: endpoint_clone.clone(),
-                                        reason: "UDP/BP read error".to_string(),
-                                    }),
-                                );
-                                continue;
-                            }
+                let mut socket = self.socket.try_clone()?;
+                let observers_cloned = observers.clone();
+                loop {
+                    let mut buffer: [u8; 65507] = [0; 65507];
+
+                    match socket.read(&mut buffer) {
+                        Ok(size) => {
+                            // Convert to Vec<u8> for consistency
+                            let data = buffer[..size].to_vec();
+                            notify_all_observers(
+                                &observers_cloned,
+                                &SocketEngineEvent::Data(DataEvent::Received {
+                                    data,
+                                    from: endpoint_clone.clone(),
+                                }),
+                            );
+                        }
+                        Err(ref e) if e.kind() == io::ErrorKind::WouldBlock => {
+                            thread::sleep(std::time::Duration::from_millis(10));
+                        }
+                        Err(_e) => {
+                            // TODO: Not sur if this is the best way to handle errors
+                            notify_all_observers(
+                                &observers_cloned,
+                                &SocketEngineEvent::Error(ErrorEvent::ReceiveFailed {
+                                    endpoint: endpoint_clone.clone(),
+                                    reason: "UDP/BP read error".to_string(),
+                                }),
+                            );
+                            continue;
                         }
                     }
-                });
+                }
             }
 
             Endpoint::Tcp(_addr) => {
                 self.socket.listen(128)?;
                 let endpoint_clone = self.endpoint.clone();
-                TOKIO_RUNTIME.spawn_blocking({
-                    let socket = self.socket.try_clone()?;
-                    move || loop {
-                        match socket.accept() {
-                            Ok((stream, peer_addr)) => {
-                                let client_addr = match peer_addr.as_socket() {
-                                    Some(addr) => format!("{}:{}", addr.ip(), addr.port()),
-                                    None => format!("{:?}", peer_addr),
-                                };
-                                // TODO: should we add ConnectionAccepted event?
-                                notify_all_observers(
-                                    &observers,
-                                    &SocketEngineEvent::Connection(ConnectionEvent::Established {
-                                        remote: Endpoint::Tcp(client_addr),
-                                    }),
-                                );
-                                let observers_cloned = observers.clone();
-                                let endpoint_for_handler = endpoint_clone.clone();
-                                TOKIO_RUNTIME.spawn(async move {
-                                    handle_tcp_connection(
-                                        stream.into(),
-                                        &observers_cloned,
-                                        endpoint_for_handler,
-                                    )
-                                    .await;
-                                });
-                            }
-                            Err(e) if e.kind() == io::ErrorKind::Interrupted => {
-                                notify_all_observers(
-                                    &observers,
-                                    &SocketEngineEvent::Connection(ConnectionEvent::Closed {
-                                        remote: None,
-                                    }),
-                                );
-                            }
-                            Err(e) if e.kind() == io::ErrorKind::WouldBlock => {
-                                thread::sleep(std::time::Duration::from_millis(10));
-                            }
 
-                            Err(e) => {
-                                notify_all_observers(
-                                    &observers,
-                                    &SocketEngineEvent::Error(ErrorEvent::SocketError {
-                                        endpoint: endpoint_clone.clone(),
-                                        reason: e.to_string(),
-                                    }),
-                                );
-                                break;
-                            }
+                let socket = self.socket.try_clone()?;
+                loop {
+                    match socket.accept() {
+                        Ok((stream, peer_addr)) => {
+                            let client_addr = match peer_addr.as_socket() {
+                                Some(addr) => format!("{}:{}", addr.ip(), addr.port()),
+                                None => format!("{:?}", peer_addr),
+                            };
+                            // TODO: should we add ConnectionAccepted event?
+                            notify_all_observers(
+                                &observers,
+                                &SocketEngineEvent::Connection(ConnectionEvent::Established {
+                                    remote: Endpoint::Tcp(client_addr),
+                                }),
+                            );
+                            let observers_cloned = observers.clone();
+                            let endpoint_for_handler = endpoint_clone.clone();
+                            TOKIO_RUNTIME.spawn(async move {
+                                handle_tcp_connection(
+                                    stream.into(),
+                                    &observers_cloned,
+                                    endpoint_for_handler,
+                                )
+                                .await;
+                            });
+                        }
+                        Err(e) if e.kind() == io::ErrorKind::Interrupted => {
+                            notify_all_observers(
+                                &observers,
+                                &SocketEngineEvent::Connection(ConnectionEvent::Closed {
+                                    remote: None,
+                                }),
+                            );
+                        }
+                        Err(e) if e.kind() == io::ErrorKind::WouldBlock => {
+                            thread::sleep(std::time::Duration::from_millis(10));
+                        }
+
+                        Err(e) => {
+                            notify_all_observers(
+                                &observers,
+                                &SocketEngineEvent::Error(ErrorEvent::SocketError {
+                                    endpoint: endpoint_clone.clone(),
+                                    reason: e.to_string(),
+                                }),
+                            );
+                            break;
                         }
                     }
-                });
+                }
             }
         }
         Ok(())
