@@ -64,6 +64,31 @@ impl GenericSocket {
         });
     }
 
+    fn prepare_socket(&mut self)-> io::Result<()> {
+        match self.endpoint {
+            Endpoint::Udp(_) => {
+                self.socket.set_nonblocking(true)?;
+                self.socket.set_reuse_address(false)?;
+                self.socket.set_reuse_port(false)?;
+                self.socket.bind(&SockAddr::from(self.sockaddr.clone()))?;
+            },
+            Endpoint::Tcp(_) => {
+                self.socket.set_nonblocking(true)?;
+                self.socket.set_reuse_address(true)?;
+                self.socket.set_reuse_port(false)?;
+                self.socket.bind(&SockAddr::from(self.sockaddr.clone()))?;
+            },
+            Endpoint::Bp(_) => {
+                self.socket.set_nonblocking(true)?;
+                self.socket.set_reuse_address(true)?;
+                self.socket.set_reuse_port(false)?;
+                self.socket.bind(&SockAddr::from(self.sockaddr.clone()))?;
+            },
+        }
+        Ok(())
+    }
+
+
     pub fn start_listener(
         &mut self,
         observers: Vec<Arc<Mutex<dyn EngineObserver + Send + Sync>>>,
@@ -72,16 +97,13 @@ impl GenericSocket {
             return Ok(());
         }
 
+        self.prepare_socket()?;
         self.listening = true;
 
-        self.socket.set_nonblocking(true)?;
-        self.socket.set_reuse_address(true)?;
-        self.socket.bind(&SockAddr::from(self.sockaddr.clone()))?;
-
         match &self.endpoint {
+
             Endpoint::Udp(_addr) | Endpoint::Bp(_addr) => {
                 let endpoint_clone = self.endpoint.clone();
-
                 let mut socket = self.socket.try_clone()?;
                 let observers_cloned = observers.clone();
                 loop {
