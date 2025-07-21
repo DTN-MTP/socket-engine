@@ -6,7 +6,7 @@ use std::{
     ptr,
 };
 
-use crate::socket::AF_BP;
+use crate::constants::protocol::{AF_BP, BP_SCHEME_IPN};
 #[derive(Clone, Debug, PartialEq)]
 pub enum Endpoint {
     Udp(String),
@@ -46,9 +46,6 @@ impl fmt::Display for Endpoint {
         }
     }
 }
-
-const BP_SCHEME_IPN: u32 = 1;
-// const BP_SCHEME_DTN: u32 = 2;
 
 #[repr(C)]
 struct SockAddrBp {

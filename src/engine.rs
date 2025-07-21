@@ -1,20 +1,13 @@
 use crate::{
     endpoint::Endpoint,
     event::{
-        notify_all_observers, ConnectionEvent, ConnectionFailureReason, DataEvent, EngineObserver,
+        notify_all_observers, DataEvent, EngineObserver,
         ErrorEvent, SocketEngineEvent,
     },
-    socket::GenericSocket,
+    listeners::{TcpListenerHandler, UdpListenerHandler, BpListenerHandler},
+    senders::{TcpSender, UdpSender, BpSender},
 };
-use once_cell::sync::Lazy;
-use std::{
-    io::Write,
-    sync::{Arc, Mutex},
-};
-use tokio::runtime::Runtime;
-
-pub static TOKIO_RUNTIME: Lazy<Runtime> =
-    Lazy::new(|| Runtime::new().expect("Failed to create Tokio runtime"));
+use std::{error::Error, sync::{Arc, Mutex}};
 
 pub struct Engine {
     observers: Vec<Arc<Mutex<dyn EngineObserver + Send + Sync>>>,
@@ -26,179 +19,87 @@ impl Engine {
             observers: Vec::new(),
         }
     }
+    
     pub fn add_observer(&mut self, obs: Arc<Mutex<dyn EngineObserver + Send + Sync>>) {
         self.observers.push(obs);
     }
 
     pub fn start_listener_async(&self, endpoint: Endpoint) {
         let observers = self.observers.clone();
-        let endpoint_clone = endpoint.clone();
-
-        match GenericSocket::new(endpoint) {
-            Ok(mut sock) => {
-                if let Err(e) = sock.start_listener(observers.clone()) {
-                    notify_all_observers(
-                        &observers,
-                        &SocketEngineEvent::Error(ErrorEvent::SocketError {
-                            endpoint: sock.endpoint.clone(),
-                            reason: e.to_string(),
-                        }),
-                    );
-                } else {
-                    if let Endpoint::Tcp(_) = sock.endpoint {
-                        notify_all_observers(
-                            &observers,
-                            &SocketEngineEvent::Connection(ConnectionEvent::ListenerStarted {
-                                endpoint: sock.endpoint.clone(),
-                            }),
-                        );
-                    }
-                }
-            }
-            Err(e) => {
+        tokio::spawn(async move {
+            if let Err(e) = Engine::start_async_listener(endpoint.clone(), observers.clone()).await {
                 notify_all_observers(
                     &observers,
                     &SocketEngineEvent::Error(ErrorEvent::SocketError {
-                        endpoint: endpoint_clone,
+                        endpoint,
                         reason: e.to_string(),
                     }),
                 );
             }
+        });
+    }
+
+    async fn start_async_listener(
+        endpoint: Endpoint,
+        observers: Vec<Arc<Mutex<dyn EngineObserver + Send + Sync>>>,
+    ) -> Result<(), Box<dyn Error + Send + Sync>> {
+        match endpoint {
+            Endpoint::Tcp(addr) => {
+                TcpListenerHandler::start(addr, observers).await
+            }
+            Endpoint::Udp(addr) => {
+                UdpListenerHandler::start(addr, observers).await
+            }
+            Endpoint::Bp(_) => {
+                // Pour BP, on garde l'approche existante avec spawn_blocking
+                tokio::task::spawn_blocking(move || {
+                    BpListenerHandler::start_blocking(endpoint, observers)
+                });
+                Ok(())
+            }
         }
     }
 
-    pub fn send_async(
+    pub fn send_async_runtime(
         &self,
         endpoint: Endpoint,
         data: Vec<u8>,
         token: String,
-    ) -> Result<(), Box<dyn std::error::Error + Send + Sync>> {
+    ) -> Result<(), Box<dyn Error + Send + Sync>> {
         let observers = self.observers.clone();
-        TOKIO_RUNTIME.spawn(async move {
-            let mut generic_socket = GenericSocket::new(endpoint).unwrap();
-            let endpoint_ref = &generic_socket.endpoint;
-            let data_uuid_ref = &token;
 
-            notify_all_observers(
-                            &observers,
-                            &&SocketEngineEvent::Data(DataEvent::Sending { message_id: data_uuid_ref.clone(), to: endpoint_ref.clone(), bytes: data.len() } ),
-                        );
-
-            match generic_socket.endpoint {
-                Endpoint::Bp(_) | Endpoint::Udp(_) => {
-                    if let Err(err) = generic_socket
-                        .socket
-                        .send_to(&data.as_slice(), &generic_socket.sockaddr)
-                    {
-                        notify_all_observers(
-                            &observers,
-                            &SocketEngineEvent::Error(ErrorEvent::SendFailed {
-                                endpoint: endpoint_ref.clone(),
-                                token: data_uuid_ref.clone(),
-                                reason: err.to_string(),
-                            }),
-                        );
-                    } else {
-                        notify_all_observers(
-                            &observers,
-                            &SocketEngineEvent::Data(DataEvent::Sent {
-                                message_id: data_uuid_ref.clone(),
-                                to: endpoint_ref.clone(),
-                                bytes_sent: data.len(),
-                            }),
-                        );
-                    }
-                }
-                Endpoint::Tcp(_) => {
-                    if let Err(err) = generic_socket.socket.connect(&generic_socket.sockaddr) {
-                        if err.kind() == std::io::ErrorKind::ConnectionRefused {
-                            notify_all_observers(
-                                &observers,
-                                &SocketEngineEvent::Error(ErrorEvent::ConnectionFailed {
-                                    endpoint: endpoint_ref.clone(),
-                                    reason: ConnectionFailureReason::Refused,
-                                    token: err.to_string(),
-                                }),
-                            );
-                        } else if err.kind() == std::io::ErrorKind::TimedOut {
-                            notify_all_observers(
-                                &observers,
-                                &SocketEngineEvent::Error(ErrorEvent::ConnectionFailed {
-                                    endpoint: endpoint_ref.clone(),
-                                    reason: ConnectionFailureReason::Timeout,
-                                    token: err.to_string(),
-                                }),
-                            );
-                        } else {
-                            notify_all_observers(
-                                &observers,
-                                &SocketEngineEvent::Error(ErrorEvent::ConnectionFailed {
-                                    endpoint: endpoint_ref.clone(),
-                                    reason: ConnectionFailureReason::Other,
-                                    token: err.to_string(),
-                                }),
-                            );
-                        }
-                    } else {
-                        notify_all_observers(
-                            &observers,
-                            &SocketEngineEvent::Connection(ConnectionEvent::Established {
-                                remote: endpoint_ref.clone(), // Remote is the target we're connecting to
-                            }),
-                        );
-
-                        if let Err(err) = generic_socket.socket.write_all(&data.as_slice()) {
-                            notify_all_observers(
-                                &observers,
-                                &SocketEngineEvent::Error(ErrorEvent::SendFailed {
-                                    endpoint: endpoint_ref.clone(),
-                                    token: data_uuid_ref.clone(),
-                                    reason: err.to_string(),
-                                }),
-                            );
-                        } else {
-                            notify_all_observers(
-                                &observers,
-                                &SocketEngineEvent::Data(DataEvent::Sent {
-                                    message_id: data_uuid_ref.clone(),
-                                    to: endpoint_ref.clone(),
-                                    bytes_sent: data.len(),
-                                }),
-                            );
-                        }
-
-                        if let Err(err) = generic_socket.socket.flush() {
-                            notify_all_observers(
-                                &observers,
-                                &SocketEngineEvent::Error(ErrorEvent::SendFailed {
-                                    endpoint: endpoint_ref.clone(),
-                                    token: data_uuid_ref.clone(),
-                                    reason: err.to_string(),
-                                }),
-                            );
-                        }
-
-                        if let Err(err) = generic_socket.socket.shutdown(std::net::Shutdown::Both) {
-                            notify_all_observers(
-                                &observers,
-                                &SocketEngineEvent::Error(ErrorEvent::SendFailed {
-                                    endpoint: generic_socket.endpoint.clone(),
-                                    token: data_uuid_ref.clone(),
-                                    reason: format!("Shutdown failed: {}", err),
-                                }),
-                            );
-                        } else {
-                            notify_all_observers(
-                                &observers,
-                                &SocketEngineEvent::Connection(ConnectionEvent::Closed {
-                                    remote: Some(generic_socket.endpoint.clone()),
-                                }),
-                            );
-                        }
-                    }
-                }
-            }
+        tokio::spawn(async move {
+            Engine::send_async(endpoint, data, token, observers).await;
         });
+        
         Ok(())
+    }
+
+    async fn send_async(
+        endpoint: Endpoint,
+        data: Vec<u8>,
+        token: String,
+        observers: Vec<Arc<Mutex<dyn EngineObserver + Send + Sync>>>,
+    ) {
+        notify_all_observers(
+            &observers,
+            &SocketEngineEvent::Data(DataEvent::Sending { 
+                message_id: token.clone(), 
+                to: endpoint.clone(), 
+                bytes: data.len() 
+            }),
+        );
+
+        match &endpoint {
+            Endpoint::Tcp(addr) => {
+                TcpSender::send(addr.clone(), data, token, endpoint, observers).await;
+            }
+            Endpoint::Udp(addr) => {
+                UdpSender::send(addr.clone(), data, token, endpoint, observers).await;
+            }
+            Endpoint::Bp(_) => {
+                BpSender::send(data, token, endpoint, observers);
+            }
+        }
     }
 }

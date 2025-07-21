@@ -1,38 +1,68 @@
 # Socket Engine
 
-## Overview
+A flexible Rust library for multi-protocol socket operations supporting UDP, TCP, and Bundle Protocol (DTN) with event-driven architecture.
 
-This repository provides a flexible socket engine in Rust, supporting UDP, TCP, and custom BP (Backplane) protocols. It abstracts socket operations and event handling, making it easy to build networked applications with event notification.
+## Features
 
----
+- **Multi-protocol support**: UDP, TCP, and Bundle Protocol
+- **Event-driven architecture**: Observer pattern for flexible event handling
+- **Async/await support**: Built on Tokio for high performance
+- **Easy to use**: Simple API for common networking tasks
 
-### Engine Interface
+## Quick Start
 
-The `Engine` struct is the main entry point for interacting with the socket engine. It manages a list of observers and provides methods to:
+### Interactive Test Application
 
-- Add observers (`add_observer`)
-- Start listening for incoming data on a given endpoint (`start_listener_async`)
-- Send data asynchronously to a specified endpoint (`send_async`)
+```bash
+# UDP - Simple connectionless protocol
+cargo run --example app -- -p udp -l 8888 -d 9999
 
----
+# TCP - Reliable connection-based protocol  
+cargo run --example app -- -p tcp -l 8888 -d 9999
 
-### Observer Pattern
+# Bundle Protocol - DTN for delay-tolerant networks
+cargo run --example app -- -p bp -L ipn:1.1 -D ipn:2.1
 
-The repository implements the observer pattern to decouple event producers (sockets) from event consumers (observers). Observers implement the `EngineObserver` trait and can be registered with the engine. When network events occur (such as data received, connection established, errors, etc.), all registered observers are notified via the `notify_all_observers` function.
+# Custom IP address
+cargo run --example app -- -p udp -l 8888 -d 9999 -i 192.168.1.100
 
-This design allows for flexible event handling, enabling multiple components to react to network events independently.
-
----
-
-### Usage
-
-To use the socket engine, you can run the provided example with either UDP or TCP protocols. The command line arguments specify the protocol and endpoints for listening and sending data.
-
-```sh
-# --- UDP Usage ---
-cargo run -- "udp 127.0.0.1:8888" "udp 127.0.0.1:9999" # Peer 1
-cargo run -- "udp 127.0.0.1:9999" "udp 127.0.0.1:8888" # Peer 2
-# --- TCP Usage ---
-cargo run -- "tcp 127.0.0.1:9999" "tcp 127.0.0.1:8888" # Peer 1
-cargo run -- "tcp 127.0.0.1:8888" "tcp 127.0.0.1:9999" # Peer 2
+# Show help
+cargo run --example app -- --help
 ```
+
+### Library Usage
+
+```rust
+use socket_engine::{Engine, endpoint::Endpoint, event::EngineObserver};
+
+// Create engine
+let mut engine = Engine::new();
+
+// Add observer
+engine.add_observer(your_observer);
+
+// Start listening
+let endpoint = Endpoint::from_str("udp 127.0.0.1:8888")?;
+engine.start_listener_async(endpoint);
+
+// Send data
+let target = Endpoint::from_str("udp 127.0.0.1:9999")?;
+engine.send_async_runtime(target, b"Hello".to_vec(), "msg-1".to_string())?;
+```
+
+## Supported Protocols
+
+- **UDP**: Fast, connectionless, unreliable
+- **TCP**: Reliable, connection-based, ordered
+- **Bundle Protocol (BP)**: DTN for delay/disruption-tolerant networks
+
+## CLI Options
+
+| Long form | Short | Description |
+|-----------|-------|-------------|
+| `--protocol` | `-p` | Protocol (udp, tcp, bp) |
+| `--local-port` | `-l` | Local port to listen on |
+| `--dist-port` | `-d` | Remote port to send to |
+| `--ip` | `-i` | IP address (default: 127.0.0.1) |
+| `--local-addr` | `-L` | Local address for Bundle Protocol |
+| `--dist-addr` | `-D` | Remote address for Bundle Protocol |
