@@ -122,7 +122,7 @@ impl Engine {
                                 &SocketEngineEvent::Error(ErrorEvent::ConnectionFailed {
                                     endpoint: endpoint_ref.clone(),
                                     reason: ConnectionFailureReason::Refused,
-                                    token: err.to_string(),
+                                    token: data_uuid_ref.clone(),
                                 }),
                             );
                         } else if err.kind() == std::io::ErrorKind::TimedOut {
@@ -131,7 +131,7 @@ impl Engine {
                                 &SocketEngineEvent::Error(ErrorEvent::ConnectionFailed {
                                     endpoint: endpoint_ref.clone(),
                                     reason: ConnectionFailureReason::Timeout,
-                                    token: err.to_string(),
+                                    token: data_uuid_ref.clone(),
                                 }),
                             );
                         } else {
@@ -140,7 +140,7 @@ impl Engine {
                                 &SocketEngineEvent::Error(ErrorEvent::ConnectionFailed {
                                     endpoint: endpoint_ref.clone(),
                                     reason: ConnectionFailureReason::Other,
-                                    token: err.to_string(),
+                                    token: data_uuid_ref.clone(),
                                 }),
                             );
                         }
