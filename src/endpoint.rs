@@ -6,12 +6,33 @@ use std::{
     ptr,
 };
 
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub enum EndpointProto {
+    Udp,
+    Tcp,
+    Bp,
+}
+impl EndpointProto {
+    pub fn to_string(&self) -> String {
+        match self {
+            EndpointProto::Udp => format!("udp").to_string(),
+            EndpointProto::Tcp => format!("tcp").to_string(),
+            EndpointProto::Bp => format!("bp").to_string(),
+        }
+    }
+}
+
+impl fmt::Display for EndpointProto {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        write!(f, "{}", self.to_string())
+    }
+}
+
 use crate::socket::AF_BP;
-#[derive(Clone, Debug, PartialEq)]
-pub enum Endpoint {
-    Udp(String),
-    Tcp(String),
-    Bp(String),
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub struct Endpoint {
+    pub proto: EndpointProto,
+    pub endpoint: String,
 }
 
 impl Endpoint {
@@ -22,28 +43,29 @@ impl Endpoint {
         let addr = parts.next().ok_or("Missing address")?;
 
         match scheme.to_lowercase().as_str() {
-            "bp" => Ok(Endpoint::Bp(addr.to_string())),
-            "tcp" => Ok(Endpoint::Tcp(addr.to_string())),
-            "udp" => Ok(Endpoint::Udp(addr.to_string())),
+            "bp" => Ok(Endpoint {
+                proto: EndpointProto::Bp,
+                endpoint: addr.to_string(),
+            }),
+            "tcp" => Ok(Endpoint {
+                proto: EndpointProto::Tcp,
+                endpoint: addr.to_string(),
+            }),
+            "udp" => Ok(Endpoint {
+                proto: EndpointProto::Udp,
+                endpoint: addr.to_string(),
+            }),
             _ => Err(format!("Unsupported scheme: {}", scheme)),
         }
     }
     pub fn to_string(&self) -> String {
-        match self {
-            Endpoint::Udp(addr) => format!("udp {}", addr).to_string(),
-            Endpoint::Tcp(addr) => format!("tcp {}", addr).to_string(),
-            Endpoint::Bp(addr) => format!("bp {}", addr).to_string(),
-        }
+        format!("{} {}", self.proto.to_string(), self.endpoint)
     }
 }
 
 impl fmt::Display for Endpoint {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
-        match self {
-            Endpoint::Udp(s) => write!(f, "{}", s),
-            Endpoint::Tcp(s) => write!(f, "{}", s),
-            Endpoint::Bp(s) => write!(f, "{}", s),
-        }
+        write!(f, "{}", self.to_string())
     }
 }
 

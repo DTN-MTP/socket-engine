@@ -9,7 +9,7 @@ use libc::c_int;
 use socket2::{Domain, Protocol, SockAddr, Socket, Type};
 
 use crate::{
-    endpoint::{create_bp_sockaddr_with_string, Endpoint},
+    endpoint::{create_bp_sockaddr_with_string, Endpoint, EndpointProto},
     engine::TOKIO_RUNTIME,
     event::{
         notify_all_observers, ConnectionEvent, DataEvent, EngineObserver, ErrorEvent,
@@ -27,67 +27,67 @@ pub struct GenericSocket {
 
 impl GenericSocket {
     pub fn new(endpoint: Endpoint) -> Result<Self, Box<dyn std::error::Error + Send + Sync>> {
-        let (domain, semtype, proto, address): (Domain, Type, Protocol, SockAddr) = match &endpoint
-        {
-            Endpoint::Udp(addr) => {
-                let std_sock = addr.parse()?;
-                (
-                    Domain::for_address(std_sock),
+        let addr = endpoint.endpoint.clone();
+        let (domain, semtype, proto, address): (Domain, Type, Protocol, SockAddr) =
+            match &endpoint.proto {
+                EndpointProto::Udp => {
+                    let std_sock = addr.parse()?;
+                    (
+                        Domain::for_address(std_sock),
+                        Type::DGRAM,
+                        Protocol::UDP,
+                        SockAddr::from(std_sock),
+                    )
+                }
+                EndpointProto::Tcp => {
+                    let std_sock = addr.parse()?;
+                    (
+                        Domain::for_address(std_sock),
+                        Type::STREAM,
+                        Protocol::TCP,
+                        SockAddr::from(std_sock),
+                    )
+                }
+                EndpointProto::Bp => (
+                    Domain::from(AF_BP),
                     Type::DGRAM,
                     Protocol::UDP,
-                    SockAddr::from(std_sock),
-                )
-            }
-            Endpoint::Tcp(addr) => {
-                let std_sock = addr.parse()?;
-                (
-                    Domain::for_address(std_sock),
-                    Type::STREAM,
-                    Protocol::TCP,
-                    SockAddr::from(std_sock),
-                )
-            }
-            Endpoint::Bp(addr) => (
-                Domain::from(AF_BP),
-                Type::DGRAM,
-                Protocol::UDP,
-                create_bp_sockaddr_with_string(&addr)?,
-            ),
-        };
+                    create_bp_sockaddr_with_string(&addr)?,
+                ),
+            };
 
         let socket = Socket::new(domain, semtype, Some(proto))?;
         return Ok(Self {
             socket: socket,
-            endpoint: endpoint,
+            endpoint,
             sockaddr: address,
             listening: false,
         });
     }
 
-    fn prepare_socket(&mut self)-> io::Result<()> {
-        match self.endpoint {
-            Endpoint::Udp(_) => {
+    fn prepare_socket(&mut self) -> io::Result<()> {
+        match self.endpoint.proto {
+            EndpointProto::Udp => {
                 self.socket.set_nonblocking(true)?;
                 self.socket.set_reuse_address(false)?;
                 self.socket.set_reuse_port(false)?;
                 self.socket.bind(&SockAddr::from(self.sockaddr.clone()))?;
-            },
-            Endpoint::Tcp(_) => {
+            }
+            EndpointProto::Tcp => {
                 self.socket.set_nonblocking(true)?;
                 self.socket.set_reuse_address(true)?;
                 self.socket.set_reuse_port(false)?;
                 self.socket.bind(&SockAddr::from(self.sockaddr.clone()))?;
-            },
-            Endpoint::Bp(_) => {
+            }
+            EndpointProto::Bp => {
                 self.socket.set_nonblocking(true)?;
                 self.socket.set_reuse_address(true)?;
                 self.socket.set_reuse_port(false)?;
                 self.socket.bind(&SockAddr::from(self.sockaddr.clone()))?;
-            },
+            }
         }
         Ok(())
     }
-
 
     pub fn start_listener(
         &mut self,
@@ -100,9 +100,9 @@ impl GenericSocket {
         self.prepare_socket()?;
         self.listening = true;
 
-        match &self.endpoint {
-
-            Endpoint::Udp(_addr) | Endpoint::Bp(_addr) => {
+        let addr = self.endpoint.endpoint.clone();
+        match &self.endpoint.proto {
+            EndpointProto::Udp | EndpointProto::Bp => {
                 let endpoint_clone = self.endpoint.clone();
                 let mut socket = self.socket.try_clone()?;
                 let observers_cloned = observers.clone();
@@ -139,7 +139,7 @@ impl GenericSocket {
                 }
             }
 
-            Endpoint::Tcp(_addr) => {
+            EndpointProto::Tcp => {
                 self.socket.listen(128)?;
                 let endpoint_clone = self.endpoint.clone();
 
@@ -155,7 +155,10 @@ impl GenericSocket {
                             notify_all_observers(
                                 &observers,
                                 &SocketEngineEvent::Connection(ConnectionEvent::Established {
-                                    remote: Endpoint::Tcp(client_addr),
+                                    remote: Endpoint {
+                                        proto: EndpointProto::Tcp,
+                                        endpoint: client_addr,
+                                    },
                                 }),
                             );
                             let observers_cloned = observers.clone();
@@ -218,7 +221,10 @@ async fn handle_tcp_connection(
         }
     };
 
-    let peer_endpoint = Endpoint::Tcp(format!("{}:{}", peer_addr.ip(), peer_addr.port()));
+    let peer_endpoint = Endpoint {
+        proto: EndpointProto::Tcp,
+        endpoint: format!("{}:{}", peer_addr.ip(), peer_addr.port()),
+    };
     let mut buffer = [0; 1024];
 
     loop {

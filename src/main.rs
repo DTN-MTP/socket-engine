@@ -3,15 +3,16 @@ use std::io::{self, BufRead, Write};
 use std::sync::atomic::{AtomicBool, Ordering};
 use std::sync::{Arc, Mutex};
 
-use socket_engine::endpoint::Endpoint;
+use socket_engine::endpoint::{Endpoint, EndpointProto};
 use socket_engine::engine::Engine;
 use socket_engine::event::EngineObserver;
 
 fn format_endpoint(endpoint: &Endpoint) -> String {
-    match endpoint {
-        Endpoint::Udp(addr) => format!("UDP:{}", addr),
-        Endpoint::Tcp(addr) => format!("TCP:{}", addr),
-        Endpoint::Bp(addr) => format!("BP:{}", addr),
+    let addr = endpoint.endpoint.clone();
+    match endpoint.proto {
+        EndpointProto::Udp => format!("UDP:{}", addr),
+        EndpointProto::Tcp => format!("TCP:{}", addr),
+        EndpointProto::Bp => format!("BP:{}", addr),
     }
 }
 

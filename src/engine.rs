@@ -1,5 +1,5 @@
 use crate::{
-    endpoint::Endpoint,
+    endpoint::{Endpoint, EndpointProto},
     event::{
         notify_all_observers, ConnectionEvent, ConnectionFailureReason, DataEvent, EngineObserver,
         ErrorEvent, SocketEngineEvent,
@@ -45,7 +45,7 @@ impl Engine {
                             }),
                         );
                     } else {
-                        if let Endpoint::Tcp(_) = sock.endpoint {
+                        if let EndpointProto::Tcp = sock.endpoint.proto {
                             notify_all_observers(
                                 &observers,
                                 &SocketEngineEvent::Connection(ConnectionEvent::ListenerStarted {
@@ -89,8 +89,8 @@ impl Engine {
                 }),
             );
 
-            match generic_socket.endpoint {
-                Endpoint::Bp(_) | Endpoint::Udp(_) => {
+            match generic_socket.endpoint.proto {
+                EndpointProto::Bp | EndpointProto::Udp => {
                     if let Err(err) = generic_socket
                         .socket
                         .send_to(&data.as_slice(), &generic_socket.sockaddr)
@@ -114,7 +114,7 @@ impl Engine {
                         );
                     }
                 }
-                Endpoint::Tcp(_) => {
+                EndpointProto::Tcp => {
                     if let Err(err) = generic_socket.socket.connect(&generic_socket.sockaddr) {
                         if err.kind() == std::io::ErrorKind::ConnectionRefused {
                             notify_all_observers(
