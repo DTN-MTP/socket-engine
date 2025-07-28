@@ -100,7 +100,6 @@ impl GenericSocket {
         self.prepare_socket()?;
         self.listening = true;
 
-        let addr = self.endpoint.endpoint.clone();
         match &self.endpoint.proto {
             EndpointProto::Udp | EndpointProto::Bp => {
                 let endpoint_clone = self.endpoint.clone();
@@ -117,7 +116,7 @@ impl GenericSocket {
                                 &observers_cloned,
                                 &SocketEngineEvent::Data(DataEvent::Received {
                                     data,
-                                    from: endpoint_clone.clone(),
+                                    from: Endpoint { proto: self.endpoint.proto.clone(), endpoint: "unsupported".to_string() },
                                 }),
                             );
                         }
