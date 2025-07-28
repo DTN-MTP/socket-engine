@@ -2,6 +2,13 @@ use std::sync::{Arc, Mutex};
 
 use crate::endpoint::Endpoint;
 
+#[cfg(feature = "with_delay")]
+use crate::engine::TOKIO_RUNTIME;
+#[cfg(feature = "with_delay")]
+use std::env;
+#[cfg(feature = "with_delay")]
+use tokio::time::{sleep, Duration};
+
 #[derive(Clone, Debug)]
 pub enum SocketEngineEvent {
     Data(DataEvent),
@@ -83,7 +90,24 @@ pub fn notify_all_observers(
     observers: &Vec<Arc<Mutex<dyn EngineObserver + Send + Sync>>>,
     event: &SocketEngineEvent,
 ) {
+    #[cfg(feature = "with_delay")]
+    let delay_ms = env::var("ENGINE_RECEIVE_DELAY_MS")
+        .ok()
+        .and_then(|v| v.parse::<u64>().ok())
+        .unwrap_or(1000);
     for obs in observers {
+        #[cfg(feature = "with_delay")]
+        {
+            if let SocketEngineEvent::Data(DataEvent::Received { .. }) = event {
+                let obs_clone = obs.clone();
+                let event_clone = event.clone();
+                TOKIO_RUNTIME.spawn(async move {
+                    sleep(Duration::from_millis(delay_ms)).await;
+                    obs_clone.lock().unwrap().on_engine_event(event_clone);
+                });
+                continue;
+            }
+        }
         obs.lock().unwrap().on_engine_event(event.clone());
     }
 }

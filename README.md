@@ -36,3 +36,10 @@ cargo run -- "udp 127.0.0.1:9999" "udp 127.0.0.1:8888" # Peer 2
 cargo run -- "tcp 127.0.0.1:9999" "tcp 127.0.0.1:8888" # Peer 1
 cargo run -- "tcp 127.0.0.1:8888" "tcp 127.0.0.1:9999" # Peer 2
 ```
+
+### Delays for testing
+
+If the feature "with_delay" is enabled, the engine will wait ENGINE_RECEIVE_DELAY_MS milliseconds before notifying observers, 1 second if the ENGINE_RECEIVE_DELAY_MS env variable is not set.
+```sh
+ENGINE_RECEIVE_DELAY_MS=2000 cargo run --features=with_delay -- "udp 127.0.0.1:8888" "udp 127.0.0.1:9999"
+```

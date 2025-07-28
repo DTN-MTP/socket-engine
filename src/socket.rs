@@ -112,11 +112,15 @@ impl GenericSocket {
                         Ok(size) => {
                             // Convert to Vec<u8> for consistency
                             let data = buffer[..size].to_vec();
+
                             notify_all_observers(
                                 &observers_cloned,
                                 &SocketEngineEvent::Data(DataEvent::Received {
                                     data,
-                                    from: Endpoint { proto: self.endpoint.proto.clone(), endpoint: "unsupported".to_string() },
+                                    from: Endpoint {
+                                        proto: self.endpoint.proto.clone(),
+                                        endpoint: "unsupported".to_string(),
+                                    },
                                 }),
                             );
                         }
