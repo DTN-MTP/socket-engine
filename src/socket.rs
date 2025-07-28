@@ -1,15 +1,17 @@
 use std::{
     io::{self, Read},
+    mem::{self, MaybeUninit},
+    os::unix::net::SocketAddr,
     sync::{Arc, Mutex},
     thread,
 };
 
 use libc::c_int;
 
-use socket2::{Domain, Protocol, SockAddr, Socket, Type};
+use socket2::{Domain, MsgHdrMut, Protocol, SockAddr, Socket, Type};
 
 use crate::{
-    endpoint::{create_bp_sockaddr_with_string, Endpoint, EndpointProto},
+    endpoint::{create_bp_sockaddr_with_string, Endpoint, EndpointProto, SockAddrBp},
     engine::TOKIO_RUNTIME,
     event::{
         notify_all_observers, ConnectionEvent, DataEvent, EngineObserver, ErrorEvent,
@@ -103,15 +105,33 @@ impl GenericSocket {
         match &self.endpoint.proto {
             EndpointProto::Udp | EndpointProto::Bp => {
                 let endpoint_clone = self.endpoint.clone();
-                let mut socket = self.socket.try_clone()?;
+                let socket = self.socket.try_clone()?;
                 let observers_cloned = observers.clone();
                 loop {
-                    let mut buffer: [u8; 65507] = [0; 65507];
+                    let mut buffer: Vec<MaybeUninit<u8>> = Vec::with_capacity(65507);
+                    unsafe {
+                        buffer.set_len(65507);
+                    }
+                    match socket.recv_from(&mut buffer.as_mut_slice()) {
+                        Ok((size, peer_addr)) => {
+                            let data: Vec<u8> = unsafe {
+                                buffer.set_len(size);
+                                std::mem::transmute(buffer)
+                            };
 
-                    match socket.read(&mut buffer) {
-                        Ok(size) => {
-                            // Convert to Vec<u8> for consistency
-                            let data = buffer[..size].to_vec();
+                            let client_addr_str = match &self.endpoint.proto {
+                                EndpointProto::Udp => match peer_addr.as_socket() {
+                                    Some(addr) => format!("{}:{}", addr.ip(), addr.port()),
+                                    None => format!("{:?}", peer_addr),
+                                },
+                                EndpointProto::Bp => {
+                                    unsafe {
+                                        let addr_ptr = peer_addr.as_ptr() as *const SockAddrBp;
+                                        (*addr_ptr).to_string()
+                                    }
+                                },
+                                _ => String::new(),
+                            };
 
                             notify_all_observers(
                                 &observers_cloned,
@@ -119,7 +139,7 @@ impl GenericSocket {
                                     data,
                                     from: Endpoint {
                                         proto: self.endpoint.proto.clone(),
-                                        endpoint: "unsupported".to_string(),
+                                        endpoint: client_addr_str,
                                     },
                                 }),
                             );

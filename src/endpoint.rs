@@ -73,14 +73,32 @@ const BP_SCHEME_IPN: u32 = 1;
 // const BP_SCHEME_DTN: u32 = 2;
 
 #[repr(C)]
-struct SockAddrBp {
+pub struct SockAddrBp {
     bp_family: libc::sa_family_t,
     bp_scheme: u32,
     bp_addr: BpAddr,
 }
 
+impl std::fmt::Display for SockAddrBp {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        let sch = if self.bp_scheme == BP_SCHEME_IPN {
+            "ipn"
+        } else {
+            "??"
+        };
+        match self.bp_scheme {
+            BP_SCHEME_IPN => {
+                let ipn_addr = unsafe { &*self.bp_addr.ipn };
+                write!(f, "{}:{}.{}", sch, ipn_addr.node_id, ipn_addr.service_id)
+            }
+            _ => {
+                write!(f, "scheme {} unknown", sch)
+            }
+        }
+    }
+}
 #[repr(C)]
-union BpAddr {
+pub union BpAddr {
     ipn: ManuallyDrop<IpnAddr>,
     // Extend with other schemes like DTN if needed
 }
