@@ -159,7 +159,7 @@ fn main() -> io::Result<()> {
     let observer = Arc::new(Mutex::new(Obs));
     let mut engine = Engine::new();
     engine.add_observer(observer);
-    engine.start_listener_async(local_endpoint);
+    engine.start_listener_async(local_endpoint.clone());
 
     // Give some time for the listener to start
     std::thread::sleep(std::time::Duration::from_millis(100));
@@ -196,6 +196,7 @@ fn main() -> io::Result<()> {
 
         // --- 4) wrap in ProtoMessage + send
         if let Err(err) = engine.send_async(
+            local_endpoint.clone(),
             distant_endpoint.clone(),
             text.into_bytes(),
             "msg".to_string(),

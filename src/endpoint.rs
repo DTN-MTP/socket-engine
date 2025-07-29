@@ -6,7 +6,7 @@ use std::{
     ptr,
 };
 
-#[derive(Clone, Debug, PartialEq, Eq)]
+#[derive(Clone, Debug, PartialEq, Eq, Hash)]
 pub enum EndpointProto {
     Udp,
     Tcp,
@@ -29,7 +29,7 @@ impl fmt::Display for EndpointProto {
 }
 
 use crate::socket::AF_BP;
-#[derive(Clone, Debug, PartialEq, Eq)]
+#[derive(Clone, Debug, PartialEq, Eq, Hash)]
 pub struct Endpoint {
     pub proto: EndpointProto,
     pub endpoint: String,

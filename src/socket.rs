@@ -1,6 +1,7 @@
 use std::{
     io::{self, Read},
     mem::MaybeUninit,
+    net::SocketAddr,
     sync::{Arc, Mutex},
     thread,
 };
@@ -26,7 +27,33 @@ pub struct GenericSocket {
     pub listening: bool,
 }
 
+pub fn endpoint_to_sockaddr(endpoint: Endpoint) -> Option<SockAddr> {
+    match endpoint.proto {
+        EndpointProto::Udp | EndpointProto::Tcp => {
+            if let Ok(std_sock) = endpoint.endpoint.parse::<SocketAddr>() {
+                return Some(SockAddr::from(std_sock));
+            }
+        }
+        EndpointProto::Bp => {
+            if let Ok(sockaddr) = create_bp_sockaddr_with_string(&endpoint.endpoint) {
+                return Some(sockaddr);
+            }
+        }
+    }
+    None
+}
+
 impl GenericSocket {
+    pub fn try_clone(&self) -> io::Result<Self> {
+        let socket = self.socket.try_clone()?;
+        Ok(GenericSocket {
+            socket,
+            endpoint: self.endpoint.clone(),
+            sockaddr: self.sockaddr.clone(),
+            listening: self.listening,
+        })
+    }
+
     pub fn new(endpoint: Endpoint) -> Result<Self, Box<dyn std::error::Error + Send + Sync>> {
         let addr = endpoint.endpoint.clone();
         let (domain, semtype, proto, address): (Domain, Type, Protocol, SockAddr) =
@@ -58,6 +85,7 @@ impl GenericSocket {
             };
 
         let socket = Socket::new(domain, semtype, Some(proto))?;
+
         return Ok(Self {
             socket: socket,
             endpoint,
@@ -98,8 +126,8 @@ impl GenericSocket {
             return Ok(());
         }
 
-        self.prepare_socket()?;
         self.listening = true;
+        self.prepare_socket()?;
 
         match &self.endpoint.proto {
             EndpointProto::Udp | EndpointProto::Bp => {
@@ -123,11 +151,9 @@ impl GenericSocket {
                                     Some(addr) => format!("{}:{}", addr.ip(), addr.port()),
                                     None => format!("{:?}", peer_addr),
                                 },
-                                EndpointProto::Bp => {
-                                    unsafe {
-                                        let addr_ptr = peer_addr.as_ptr() as *const SockAddrBp;
-                                        (*addr_ptr).to_string()
-                                    }
+                                EndpointProto::Bp => unsafe {
+                                    let addr_ptr = peer_addr.as_ptr() as *const SockAddrBp;
+                                    (*addr_ptr).to_string()
                                 },
                                 _ => String::new(),
                             };
