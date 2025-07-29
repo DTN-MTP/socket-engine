@@ -6,8 +6,7 @@ use crate::{
     },
     socket::{endpoint_to_sockaddr, GenericSocket},
 };
-use core::panic;
-use libc::clone;
+
 use once_cell::sync::Lazy;
 use std::{
     collections::HashMap,
