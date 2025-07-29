@@ -1,14 +1,13 @@
 use std::{
     io::{self, Read},
-    mem::{self, MaybeUninit},
-    os::unix::net::SocketAddr,
+    mem::MaybeUninit,
     sync::{Arc, Mutex},
     thread,
 };
 
 use libc::c_int;
 
-use socket2::{Domain, MsgHdrMut, Protocol, SockAddr, Socket, Type};
+use socket2::{Domain, Protocol, SockAddr, Socket, Type};
 
 use crate::{
     endpoint::{create_bp_sockaddr_with_string, Endpoint, EndpointProto, SockAddrBp},
