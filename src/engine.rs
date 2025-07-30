@@ -94,34 +94,51 @@ impl Engine {
         });
     }
 
+    fn try_reuse_socket(
+        &self,
+        source: Endpoint,
+        dest: Endpoint,
+    ) -> Result<GenericSocket, Box<dyn std::error::Error + Send + Sync>> {
+        if dest.proto == EndpointProto::Bp || dest.proto == EndpointProto::Udp {
+            if let Some(existing_sock) = self.sockets.get(&source) {
+                return existing_sock.try_clone().map_err(Into::into);
+            }
+        }
+        GenericSocket::new(source).map_err(Into::into)
+    }
+
     pub fn send_async(
         &self,
         source_endpoint: Endpoint,
-        endpoint: Endpoint,
+        target_endpoint: Endpoint,
         data: Vec<u8>,
         token: String,
-    ) -> Result<(), Box<dyn std::error::Error + Send + Sync>> {
+    ) {
         let observers = self.observers.clone();
-        let target_endpoint = endpoint.clone();
-        let mut generic_socket = if endpoint.proto == EndpointProto::Bp {
-            match self.sockets.get(&source_endpoint) {
-                Some(existing_sock) => existing_sock.try_clone()?,
-                None => GenericSocket::new(endpoint)?,
-            }
-        } else {
-            GenericSocket::new(endpoint).unwrap()
-        };
+        let target_endpoint_clone = target_endpoint.clone();
+        let generic_socket_res = self.try_reuse_socket(source_endpoint, target_endpoint);
 
-        let sock_addr = endpoint_to_sockaddr(target_endpoint.clone()).unwrap();
+        let sock_addr = endpoint_to_sockaddr(target_endpoint_clone.clone()).unwrap();
 
         TOKIO_RUNTIME.spawn(async move {
             let data_uuid_ref = &token;
+
+            let mut generic_socket = match generic_socket_res {
+                Ok(generic_socket) => generic_socket,
+                Err(e) => {
+                     notify_all_observers(
+                        &observers,
+                        &&SocketEngineEvent::Error(ErrorEvent::SocketError { endpoint: target_endpoint_clone, reason: e.to_string() } ),
+                    );
+                    return
+                },
+            };
 
             notify_all_observers(
                 &observers,
                 &SocketEngineEvent::Data(DataEvent::Sending {
                     message_id: data_uuid_ref.clone(),
-                    to: target_endpoint.clone(),
+                    to: target_endpoint_clone.clone(),
                     bytes: data.len(),
                 }),
             );
@@ -132,7 +149,7 @@ impl Engine {
                         notify_all_observers(
                             &observers,
                             &SocketEngineEvent::Error(ErrorEvent::SendFailed {
-                                endpoint: target_endpoint.clone(),
+                                endpoint: target_endpoint_clone.clone(),
                                 token: data_uuid_ref.clone(),
                                 reason: err.to_string(),
                             }),
@@ -142,7 +159,7 @@ impl Engine {
                             &observers,
                             &SocketEngineEvent::Data(DataEvent::Sent {
                                 message_id: data_uuid_ref.clone(),
-                                to: target_endpoint.clone(),
+                                to: target_endpoint_clone.clone(),
                                 bytes_sent: data.len(),
                             }),
                         );
@@ -154,7 +171,7 @@ impl Engine {
                             notify_all_observers(
                                 &observers,
                                 &SocketEngineEvent::Error(ErrorEvent::ConnectionFailed {
-                                    endpoint: target_endpoint.clone(),
+                                    endpoint: target_endpoint_clone.clone(),
                                     reason: ConnectionFailureReason::Refused,
                                     token: data_uuid_ref.clone(),
                                 }),
@@ -163,7 +180,7 @@ impl Engine {
                             notify_all_observers(
                                 &observers,
                                 &SocketEngineEvent::Error(ErrorEvent::ConnectionFailed {
-                                    endpoint: target_endpoint.clone(),
+                                    endpoint: target_endpoint_clone.clone(),
                                     reason: ConnectionFailureReason::Timeout,
                                     token: data_uuid_ref.clone(),
                                 }),
@@ -172,7 +189,7 @@ impl Engine {
                             notify_all_observers(
                                 &observers,
                                 &SocketEngineEvent::Error(ErrorEvent::ConnectionFailed {
-                                    endpoint: target_endpoint.clone(),
+                                    endpoint: target_endpoint_clone.clone(),
                                     reason: ConnectionFailureReason::Other,
                                     token: data_uuid_ref.clone(),
                                 }),
@@ -182,7 +199,7 @@ impl Engine {
                         notify_all_observers(
                             &observers,
                             &SocketEngineEvent::Connection(ConnectionEvent::Established {
-                                remote: target_endpoint.clone(), // Remote is the target we're connecting to
+                                remote: target_endpoint_clone.clone(), // Remote is the target we're connecting to
                             }),
                         );
 
@@ -190,7 +207,7 @@ impl Engine {
                             notify_all_observers(
                                 &observers,
                                 &SocketEngineEvent::Error(ErrorEvent::SendFailed {
-                                    endpoint: target_endpoint.clone(),
+                                    endpoint: target_endpoint_clone.clone(),
                                     token: data_uuid_ref.clone(),
                                     reason: err.to_string(),
                                 }),
@@ -200,7 +217,7 @@ impl Engine {
                                 &observers,
                                 &SocketEngineEvent::Data(DataEvent::Sent {
                                     message_id: data_uuid_ref.clone(),
-                                    to: target_endpoint.clone(),
+                                    to: target_endpoint_clone.clone(),
                                     bytes_sent: data.len(),
                                 }),
                             );
@@ -210,7 +227,7 @@ impl Engine {
                             notify_all_observers(
                                 &observers,
                                 &SocketEngineEvent::Error(ErrorEvent::SendFailed {
-                                    endpoint: target_endpoint.clone(),
+                                    endpoint: target_endpoint_clone.clone(),
                                     token: data_uuid_ref.clone(),
                                     reason: err.to_string(),
                                 }),
@@ -221,7 +238,7 @@ impl Engine {
                             notify_all_observers(
                                 &observers,
                                 &SocketEngineEvent::Error(ErrorEvent::SendFailed {
-                                    endpoint: generic_socket.endpoint.clone(),
+                                    endpoint: target_endpoint_clone.clone(),
                                     token: data_uuid_ref.clone(),
                                     reason: format!("Shutdown failed: {}", err),
                                 }),
@@ -238,6 +255,5 @@ impl Engine {
                 }
             }
         });
-        Ok(())
     }
 }

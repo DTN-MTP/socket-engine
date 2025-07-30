@@ -195,14 +195,12 @@ fn main() -> io::Result<()> {
         }
 
         // --- 4) wrap in ProtoMessage + send
-        if let Err(err) = engine.send_async(
+        engine.send_async(
             local_endpoint.clone(),
             distant_endpoint.clone(),
             text.into_bytes(),
             "msg".to_string(),
-        ) {
-            eprintln!("[ERROR] Failed to send message: {}", err);
-        }
+        );
     }
 
     Ok(())
