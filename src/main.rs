@@ -159,7 +159,7 @@ fn main() -> io::Result<()> {
     let observer = Arc::new(Mutex::new(Obs));
     let mut engine = Engine::new();
     engine.add_observer(observer);
-    engine.start_listener_async(local_endpoint.clone());
+    let _ = engine.start_listener_async(local_endpoint.clone());
 
     // Give some time for the listener to start
     std::thread::sleep(std::time::Duration::from_millis(100));

@@ -34,32 +34,18 @@ impl Engine {
         self.observers.push(obs);
     }
 
-    pub fn start_listener_async(&mut self, endpoint: Endpoint) {
+    pub fn start_listener_async(&mut self, endpoint: Endpoint) -> Result<(), Box<dyn std::error::Error + Send + Sync>> {
         let socket = match GenericSocket::new(endpoint.clone()) {
             Ok(sock) => sock,
             Err(e) => {
-                notify_all_observers(
-                    &self.observers,
-                    &SocketEngineEvent::Error(ErrorEvent::SocketError {
-                        endpoint: endpoint.clone(),
-                        reason: e.to_string(),
-                    }),
-                );
-                return;
+                return Err(e);
             }
         };
 
         match socket.try_clone() {
             Ok(sock) => self.sockets.insert(endpoint.clone(), sock),
             Err(e) => {
-                notify_all_observers(
-                    &self.observers,
-                    &SocketEngineEvent::Error(ErrorEvent::SocketError {
-                        endpoint: endpoint.clone(),
-                        reason: e.to_string(),
-                    }),
-                );
-                return;
+                return Err(Box::new(e));
             }
         };
 
@@ -98,6 +84,7 @@ impl Engine {
                 }
             }
         });
+        Ok(())
     }
 
     pub fn send_async(
@@ -112,19 +99,9 @@ impl Engine {
         let mut generic_socket = if endpoint.proto == EndpointProto::Bp {
             match self.sockets.get(&source_endpoint) {
                 Some(existing_sock) => {
-                    let Ok(found_sock) = existing_sock.try_clone() else {
-                        notify_all_observers(
-                            &observers,
-                            &SocketEngineEvent::Error(ErrorEvent::SocketError {
-                                endpoint: endpoint.clone(),
-                                reason: "Unable to clone listening socket".to_string(),
-                            }),
-                        );
-                        return Ok(());
-                    };
-                    found_sock
+                    existing_sock.try_clone()?
                 }
-                None => GenericSocket::new(endpoint).unwrap(),
+                None => GenericSocket::new(endpoint)?,
             }
         } else {
             GenericSocket::new(endpoint).unwrap()
@@ -137,7 +114,7 @@ impl Engine {
 
             notify_all_observers(
                 &observers,
-                &&SocketEngineEvent::Data(DataEvent::Sending {
+                &SocketEngineEvent::Data(DataEvent::Sending {
                     message_id: data_uuid_ref.clone(),
                     to: target_endpoint.clone(),
                     bytes: data.len(),
