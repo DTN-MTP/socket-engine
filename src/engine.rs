@@ -34,25 +34,31 @@ impl Engine {
         self.observers.push(obs);
     }
 
-    pub fn start_listener_async(&mut self, endpoint: Endpoint) -> Result<(), Box<dyn std::error::Error + Send + Sync>> {
+    fn create_socket_and_store(&mut self, endpoint: Endpoint) -> Result<GenericSocket, Box<dyn std::error::Error + Send + Sync>> {
         let socket = match GenericSocket::new(endpoint.clone()) {
-            Ok(sock) => sock,
-            Err(e) => {
-                return Err(e);
-            }
-        };
+                    Ok(sock) => sock,
+                    Err(e) => {
+                        return Err(e);
+                    }
+                };
 
-        match socket.try_clone() {
-            Ok(sock) => self.sockets.insert(endpoint.clone(), sock),
-            Err(e) => {
-                return Err(Box::new(e));
-            }
-        };
+                match socket.try_clone() {
+                    Ok(sock) => self.sockets.insert(endpoint.clone(), sock),
+                    Err(e) => {
+                        return Err(Box::new(e));
+                    }
+                };
+                return Ok((socket))
+    }
+
+    pub fn start_listener_async(&mut self, endpoint: Endpoint)  {
+
+        let res = self.create_socket_and_store(endpoint.clone());
 
         TOKIO_RUNTIME.spawn_blocking({
             let observers = self.observers.clone();
             let endpoint_clone = endpoint.clone();
-            move || match socket.try_clone() {
+            move || match res {
                 Ok(mut sock) => {
                     if let Err(e) = sock.start_listener(observers.clone()) {
                         notify_all_observers(
@@ -84,7 +90,6 @@ impl Engine {
                 }
             }
         });
-        Ok(())
     }
 
     pub fn send_async(
