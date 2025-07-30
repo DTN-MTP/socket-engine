@@ -34,25 +34,27 @@ impl Engine {
         self.observers.push(obs);
     }
 
-    fn create_socket_and_store(&mut self, endpoint: Endpoint) -> Result<GenericSocket, Box<dyn std::error::Error + Send + Sync>> {
+    fn create_socket_and_store(
+        &mut self,
+        endpoint: Endpoint,
+    ) -> Result<GenericSocket, Box<dyn std::error::Error + Send + Sync>> {
         let socket = match GenericSocket::new(endpoint.clone()) {
-                    Ok(sock) => sock,
-                    Err(e) => {
-                        return Err(e);
-                    }
-                };
+            Ok(sock) => sock,
+            Err(e) => {
+                return Err(e);
+            }
+        };
 
-                match socket.try_clone() {
-                    Ok(sock) => self.sockets.insert(endpoint.clone(), sock),
-                    Err(e) => {
-                        return Err(Box::new(e));
-                    }
-                };
-                return Ok((socket))
+        match socket.try_clone() {
+            Ok(sock) => self.sockets.insert(endpoint.clone(), sock),
+            Err(e) => {
+                return Err(Box::new(e));
+            }
+        };
+        return Ok(socket);
     }
 
-    pub fn start_listener_async(&mut self, endpoint: Endpoint)  {
-
+    pub fn start_listener_async(&mut self, endpoint: Endpoint) {
         let res = self.create_socket_and_store(endpoint.clone());
 
         TOKIO_RUNTIME.spawn_blocking({
@@ -103,9 +105,7 @@ impl Engine {
         let target_endpoint = endpoint.clone();
         let mut generic_socket = if endpoint.proto == EndpointProto::Bp {
             match self.sockets.get(&source_endpoint) {
-                Some(existing_sock) => {
-                    existing_sock.try_clone()?
-                }
+                Some(existing_sock) => existing_sock.try_clone()?,
                 None => GenericSocket::new(endpoint)?,
             }
         } else {
