@@ -126,12 +126,15 @@ impl Engine {
             let mut generic_socket = match generic_socket_res {
                 Ok(generic_socket) => generic_socket,
                 Err(e) => {
-                     notify_all_observers(
+                    notify_all_observers(
                         &observers,
-                        &&SocketEngineEvent::Error(ErrorEvent::SocketError { endpoint: target_endpoint_clone, reason: e.to_string() } ),
+                        &SocketEngineEvent::Error(ErrorEvent::SocketError {
+                            endpoint: target_endpoint_clone,
+                            reason: e.to_string(),
+                        }),
                     );
-                    return
-                },
+                    return;
+                }
             };
 
             notify_all_observers(
