@@ -94,7 +94,7 @@ impl Engine {
         });
     }
 
-    fn try_reuse_socket(
+    fn try_reuse_socket_for_send(
         &self,
         source_opt: Option<Endpoint>,
         dest: Endpoint,
@@ -119,7 +119,7 @@ impl Engine {
     ) {
         let observers = self.observers.clone();
         let target_endpoint_clone = target_endpoint.clone();
-        let generic_socket_res = self.try_reuse_socket(source_endpoint, target_endpoint);
+        let generic_socket_res = self.try_reuse_socket_for_send(source_endpoint, target_endpoint);
 
         let sock_addr = endpoint_to_sockaddr(target_endpoint_clone.clone()).unwrap();
 
@@ -131,9 +131,10 @@ impl Engine {
                 Err(e) => {
                     notify_all_observers(
                         &observers,
-                        &&SocketEngineEvent::Error(ErrorEvent::SocketError {
+                        &&SocketEngineEvent::Error(ErrorEvent::SendFailed {
                             endpoint: target_endpoint_clone,
                             reason: e.to_string(),
+                            token,
                         }),
                     );
                     return;
@@ -143,7 +144,7 @@ impl Engine {
             notify_all_observers(
                 &observers,
                 &SocketEngineEvent::Data(DataEvent::Sending {
-                    message_id: data_uuid_ref.clone(),
+                    token: data_uuid_ref.clone(),
                     to: target_endpoint_clone.clone(),
                     bytes: data.len(),
                 }),
@@ -164,7 +165,7 @@ impl Engine {
                         notify_all_observers(
                             &observers,
                             &SocketEngineEvent::Data(DataEvent::Sent {
-                                message_id: data_uuid_ref.clone(),
+                                token: data_uuid_ref.clone(),
                                 to: target_endpoint_clone.clone(),
                                 bytes_sent: data.len(),
                             }),
@@ -222,7 +223,7 @@ impl Engine {
                             notify_all_observers(
                                 &observers,
                                 &SocketEngineEvent::Data(DataEvent::Sent {
-                                    message_id: data_uuid_ref.clone(),
+                                    token: data_uuid_ref.clone(),
                                     to: target_endpoint_clone.clone(),
                                     bytes_sent: data.len(),
                                 }),

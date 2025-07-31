@@ -23,12 +23,12 @@ pub enum DataEvent {
         from: Endpoint,
     },
     Sending {
-        message_id: String,
+        token: String,
         to: Endpoint,
         bytes: usize,
     },
     Sent {
-        message_id: String,
+        token: String,
         to: Endpoint,
         bytes_sent: usize,
     },

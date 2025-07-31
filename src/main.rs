@@ -37,14 +37,14 @@ impl EngineObserver for Obs {
                     );
                 }
                 socket_engine::event::DataEvent::Sent {
-                    message_id: _,
+                    token: _,
                     to,
                     bytes_sent,
                 } => {
                     println!("[SENT] To {} ({} bytes)", format_endpoint(&to), bytes_sent);
                 }
                 socket_engine::event::DataEvent::Sending {
-                    message_id,
+                    token: message_id,
                     to,
                     bytes,
                 } => {
