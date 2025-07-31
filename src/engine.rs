@@ -96,20 +96,23 @@ impl Engine {
 
     fn try_reuse_socket(
         &self,
-        source: Endpoint,
+        source_opt: Option<Endpoint>,
         dest: Endpoint,
     ) -> Result<GenericSocket, Box<dyn std::error::Error + Send + Sync>> {
-        if dest.proto == EndpointProto::Bp || dest.proto == EndpointProto::Udp {
-            if let Some(existing_sock) = self.sockets.get(&source) {
-                return existing_sock.try_clone().map_err(Into::into);
+        if let Some(source) = source_opt {
+            if dest.proto == EndpointProto::Bp || dest.proto == EndpointProto::Udp {
+                if let Some(existing_sock) = self.sockets.get(&source) {
+                    return existing_sock.try_clone().map_err(Into::into);
+                }
             }
         }
-        GenericSocket::new(source).map_err(Into::into)
+        // Should be safe as we do not bind
+        GenericSocket::new(dest).map_err(Into::into)
     }
 
     pub fn send_async(
         &self,
-        source_endpoint: Endpoint,
+        source_endpoint: Option<Endpoint>,
         target_endpoint: Endpoint,
         data: Vec<u8>,
         token: String,
@@ -128,7 +131,7 @@ impl Engine {
                 Err(e) => {
                     notify_all_observers(
                         &observers,
-                        &SocketEngineEvent::Error(ErrorEvent::SocketError {
+                        &&SocketEngineEvent::Error(ErrorEvent::SocketError {
                             endpoint: target_endpoint_clone,
                             reason: e.to_string(),
                         }),

@@ -196,7 +196,7 @@ fn main() -> io::Result<()> {
 
         // --- 4) wrap in ProtoMessage + send
         engine.send_async(
-            local_endpoint.clone(),
+            Some(local_endpoint.clone()),
             distant_endpoint.clone(),
             text.into_bytes(),
             "msg".to_string(),
